@@ -45,6 +45,7 @@ def init():
     global document_url
     global documentation_path
     global full_python_path
+    global has_customized_buttons
     global has_installation_been_customized
     global html_root_directory
     global private_data_directory
@@ -60,6 +61,7 @@ def init():
     document_url = "/searchlog/"
     documentation_path = "/usr/doc/searchlog/"
     full_python_path = "/usr/bin/python"
+    has_customized_buttons = "no"
     has_installation_been_customized = "no"
     html_root_directory = "/var/www/html/searchlog/"
     private_data_directory = "/usr/share/searchlog/"
@@ -100,6 +102,7 @@ def install_or_upgrade():
     global document_url
     global documentation_path
     global full_python_path
+    global has_customized_buttons
     global html_root_directory
     global private_data_directory
     global server_executable_path
@@ -126,6 +129,14 @@ def install_or_upgrade():
         os.system("chmod 644 " + html_root_directory + "/*")
     elif get_script_mode() == "upgrade":
         os.system("cp html/transparent.gif " + html_root_directory)
+        os.system("cp html/home.gif " + html_root_directory)
+        if not is_true(has_customized_buttons):
+            os.system("cp " + html_root_directory + "/start_over.gif " + \
+              html_root_directory + "/start_over.backup.gif")
+            os.system("cp html/start_over.gif " + html_root_directory)
+            os.system("cp " + html_root_directory + "/submit.gif " + \
+              html_root_directory + "/submit.backup.gif")
+            os.system("cp html/submit.gif " + html_root_directory)
     os.system("rm -rf " + cgi_executable_path)
     os.system("mkdir -p " + cgi_executable_path)
     os.system("rm -rf " + cgi_executable_path)
@@ -160,7 +171,7 @@ def install_or_upgrade():
         substitute(server_executable_path, \
           "CAN_SEQUENCE_OVER_DICTIONARIES = 1", \
           "CAN_SEQUENCE_OVER_DICTIONARIES = 0")
-    if is_true(start_server_at_boot):
+    if get_script_mode() == "install" and is_true(start_server_at_boot):
         substitute(server_startup_script, "SERVER_EXECUTABLE_PATH", \
           server_executable_path)
         substitute(server_startup_script, "PRIVATE_DATA_DIRECTORY", \
@@ -198,6 +209,8 @@ Thank you for using SearchLog!
 
 """)
     if get_script_mode() == "upgrade":
+        os.system("killall " + string.split(server_executable_path, "/")[-1])
+        os.system(server_executable_path)
         output(\
 """
 
@@ -215,6 +228,7 @@ def interview():
     global document_url
     global documentation_path
     global full_python_path
+    global has_customized_buttons
     global has_installation_been_customized
     global html_root_directory
     global private_data_directory
@@ -249,13 +263,14 @@ SearchLog to work?  This should be something like
 
 SearchLog executable path""")
     server_executable_path = get_value(server_executable_path)
-    output(\
+    if get_script_mode() == "install":
+        output(\
 """
 Do you wish to have the server automatically started when the computer boots?
 (If not, you can start the server manually or from a crontab entry.)
 
 Start at boot (y/n)""")
-    start_server_at_boot = get_value(start_server_at_boot)
+        start_server_at_boot = get_value(start_server_at_boot)
     if is_true(start_server_at_boot):
         output(\
 """
@@ -324,15 +339,12 @@ something like "/usr/share/searchlog/" or "~/searchlog/".
     output("""
 Private data directory""")
     private_data_directory = get_value(private_data_directory)
-    #if get_script_mode() == "upgrade":
-        #output(\
-#"""
-#Have you customized your SearchLog script after installation and any
-#upgrades (yes/no)""")
-        #has_installation_been_customized =\
-          #get_value(has_installation_been_customized)
-        #if is_true(has_installation_been_customized):
-            #pass
+    if get_script_mode() == "upgrade":
+        output(\
+"""
+Have you customized the "Go!" and "Start Over" buttons after installation and
+any upgrades (yes/no)""")
+        has_customized_buttons = get_value(has_customized_buttons)
     if get_script_mode() == "install":
         output(\
 """
@@ -360,11 +372,10 @@ You have selected the following options:
     SearchLog URL: """ + action_url + """
     SearchLog CGI executable path: """ + cgi_executable_path + """
     SearchLog server executable path: """ + server_executable_path + """
-    Start server at boot: """ + start_server_at_boot)
-        if is_true(start_server_at_boot):
-            output(\
-"""
     SearchLog server startup script: """ + server_startup_script)
+        output(\
+"""
+    Have customized buttons: """ + has_customized_buttons)
         output("""
     Document URL: """ + document_url + """
     Full Python path: """ + full_python_path + """
@@ -396,13 +407,14 @@ Bye! You can always install SearchLog at a later time.
 
 def is_true(option_value):
     """Test whether a supplied string should be interpreted as true. This will
-    happen if the value, converted to lowercase, is "true", "yes", "on", or
+    happen if the value, converted to lowercase, has the same first character
+    as "true", "yes", "on", or
     "1"."""
-    if option_value.lower() == "true":
+    if option_value.lower()[0] == "t":
         return 1
-    elif option_value.lower() == "yes":
+    elif option_value.lower()[0] == "y":
         return 1
-    elif option_value.lower() == "on":
+    elif option_value.lower()[0] == "o":
         return 1
     elif option_value.lower() == "1":
         return 1

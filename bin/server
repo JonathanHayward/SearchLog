@@ -1,6 +1,12 @@
 #!FULL_PYTHON_PATH
 #
 # $Log: insightd,v $
+# Revision 1.70  2004/12/23 19:29:59  jonathan
+# Commit before development release 1.0.2.
+#
+# Revision 1.69  2004/12/20 15:03:48  jonathan
+# Commit after disabling URL munging for searchlog. Release 1.0.1.
+#
 # Revision 1.68  2004/12/20 13:58:58  jonathan
 # Minor code cleanup.
 #
@@ -669,6 +675,11 @@ class configuration_class(ancestor):
             return self.default_format
         else:
             return "viewing_timestamp"
+    def get_default_result_title(self):
+        if hasattr(self, "default_result_title"):
+            return self.default_result_title
+        else:
+            return ""
     def get_default_style(self, color = "#808080", should_color = 1):
         if should_color:
             return "color: " + color
@@ -909,6 +920,8 @@ class configuration_class(ancestor):
         self.cache_duration = cache_duration
     def set_default_format(self, default_format):
         self.default_format = default_format
+    def set_default_result_title(self, default_result_title):
+        self.default_result_title = default_result_title
     def set_display_more_like_this(self, display_more_like_this):
         self.display_more_like_this = display_more_like_this
     def set_enable_thesaurus(self, enable_thesaurus):
@@ -1628,6 +1641,12 @@ class folder_tab(ancestor):
               configuration.get_access_level()))
         result.append("</p>")
         if configuration.get_program_name() == "searchlog":
+            result.append("<p>What is the title for the \"home page\" you ")
+            result.append("want to use as the home page?<br>")
+            result.append(get_administrative_text_box( \
+              "control_miscellaneous_default_result_title",
+              configuration.get_default_result_title()))
+            result.append("</p>")
             result.append("<p>What should the default format be? ")
             result.append(get_format_choice(configuration.get_default_format(), \
               "control_miscellaneous_default_format"))
@@ -1647,7 +1666,7 @@ class folder_tab(ancestor):
         result.append("</select></p>")
         result.append("<p><em>Use this feature with caution: a minimal and ")
         result.append("handcrafted thesaurus can be a real boon, but ")
-        result.append("downloading and plugging in a thesaurus only looks ")
+        result.append("downloading and plugging in most thesauri only looks ")
         result.append("good on paper.</em></p>")
         result.append("<p>If the thesaurus is enabled, should it match ")
         result.append("partial words? ")
@@ -2185,6 +2204,9 @@ class frame_control(frame):
               int(get_cgi("control_miscellaneous_cache_duration_seconds")))
         except ValueError:
             pass
+        configuration.set_default_result_title(get_cgi( \
+          "control_miscellaneous_default_result_title", \
+          configuration.get_default_result_title()))
         configuration.set_default_format(get_cgi( \
           "control_miscellaneous_default_format", \
           configuration.get_default_format()))
@@ -2582,7 +2604,14 @@ class frame_search(frame):
           factory.get_frame("search").get_url() + \
           "&access=" + get_cgi("access") + \
           "\"><img src=\"" + configuration.convert_to_url("start_over.gif") + \
-          "\" alt=\"Start Over\" align=\"center\" border=\"0\"></a>")
+          "\" alt=\"Start Over\" align=\"center\" border=\"0\"></a>&nbsp; ")
+        if configuration.get_program_name() == "searchlog":
+            build_output("<a href=\"" + \
+              factory.get_frame("search_result").get_url() + \
+              "&access=" + get_cgi("access") + \
+              "\" target=\"search_result\"><img src=\"" + \
+              configuration.convert_to_url("home.gif") + \
+              "\" alt=\"Home\" align=\"center\" border=\"0\"></a>&nbsp; ")
         build_output("<input type=\"hidden\" name=\"page_mode\" " + \
           "value=\"search\">")
         build_output("<input type=\"hidden\" name=\"old_place_in_search\" " + \
@@ -2785,67 +2814,71 @@ class frame_search_result(frame):
         else:
             nothing_displayed = 1
         if nothing_displayed:
-            header = configuration.get_page_header()
-            header = string.replace(header, "@TITLE@", \
-              configuration.get_frame_title("search_result_from_html"))
-            header = string.replace(header, "@BODY_TAG@", \
-              configuration.get_body_tag())
-            build_output(header)
-            build_output("<form action=\"" + configuration.get_action_url() + \
-              "\" name=\"" + configuration.get_program_name() + \
-              "\" method=\"" + configuration.get_action_method() + "\">")
-            build_output("<input type=\"hidden\" name=\"page_mode\" " + \
-              "value=\"search_result\">")
-            build_output("<input type=\"hidden\" name=\"should_display_index\" " + \
-              "value=\"1\">")
-            if configuration.get_program_name() != "searchlog":
-                build_output("<br>")
-                build_output("<table width=\"100%\" border=\"0\" " + \
-                  "cellpadding=\"3\" cellspacing=\"0\">")
-                build_output("<tr><td align=\"center\">")
-                build_output("View home page for:")
-                build_output("</td></tr><tr><td align=\"center\">")
-                build_output(get_section_choice(None, "file_section", \
-                  None, 0, 1))
-                build_output("<input type=\"image\" name=\"submit\" value=\"submit\" " + \
-                  "alt=\"submit\" border=\"0\" align=\"center\" src=\"" + \
-                  configuration.convert_to_url("submit.gif") + "\"></p>")
-                build_output("</td></tr></table>")
-                build_output("<br>")
-            build_output("</form>")
-            build_output(configuration.get_welcome_page())
-            if configuration.get_program_name() == "searchlog":
-                build_output("<p align=\"center\"><a style=\"" + \
-                  configuration.get_control_link_style() + "\" href=\"" + \
-                  factory.get_frame_edit_entry().get_url() + "&access=" + \
-                  urllib.quote(get_cgi("access")) + \
-                  "&entry_identifier=new_entry\">Add Entry</a></p>\n")
-            build_output("<script language=\"JavaScript\">")
-            build_output("<!--")
-            build_output("function open_control_window()")
-            build_output("    {")
-            build_output("    open_window=window.open('" + \
-              configuration.get_action_url() + \
-              "?page_mode=administrative_control'," + \
-              "'control','toolbar=no,location=no,directories=no,status=no," + \
-              "menubar=no,scrollbars=yes,width=" + \
-              str(configuration.get_control_popup_width()) + ",height=" + \
-              str(configuration.get_control_popup_height()) + \
-              ",top=100,left=100')")
-            build_output("    }")
-            build_output("// -->")
-            build_output("</script>")
-            #build_output("<p align=\"center\"><a href=\"JavaScript:" + \
-              #"open_control_window()\" style=\"" + \
-              #configuration.get_control_link_style() + \
-              #"\">Configure</a></p>")
-            build_output("<noscript>")
-            build_output("<p><strong>You will need to have JavaScript on, " + \
-              "with " + \
-              "popups enabled for this site, to control these pages' " + \
-              "behavior.</strong></p>")
-            build_output("<noscript>")
-            build_output(configuration.get_page_footer())
+            if configuration.get_default_result_title() != "":
+                factory.get_frame_wiki_link().display( \
+                  configuration.get_default_result_title())
+            else:
+                header = configuration.get_page_header()
+                header = string.replace(header, "@TITLE@", \
+                  configuration.get_frame_title("search_result_from_html"))
+                header = string.replace(header, "@BODY_TAG@", \
+                  configuration.get_body_tag())
+                build_output(header)
+                build_output("<form action=\"" + configuration.get_action_url() + \
+                  "\" name=\"" + configuration.get_program_name() + \
+                  "\" method=\"" + configuration.get_action_method() + "\">")
+                build_output("<input type=\"hidden\" name=\"page_mode\" " + \
+                  "value=\"search_result\">")
+                build_output("<input type=\"hidden\" name=\"should_display_index\" " + \
+                  "value=\"1\">")
+                if configuration.get_program_name() != "searchlog":
+                    build_output("<br>")
+                    build_output("<table width=\"100%\" border=\"0\" " + \
+                      "cellpadding=\"3\" cellspacing=\"0\">")
+                    build_output("<tr><td align=\"center\">")
+                    build_output("View home page for:")
+                    build_output("</td></tr><tr><td align=\"center\">")
+                    build_output(get_section_choice(None, "file_section", \
+                      None, 0, 1))
+                    build_output("<input type=\"image\" name=\"submit\" value=\"submit\" " + \
+                      "alt=\"submit\" border=\"0\" align=\"center\" src=\"" + \
+                      configuration.convert_to_url("submit.gif") + "\"></p>")
+                    build_output("</td></tr></table>")
+                    build_output("<br>")
+                build_output("</form>")
+                build_output(configuration.get_welcome_page())
+                if configuration.get_program_name() == "searchlog":
+                    build_output("<p align=\"center\"><a style=\"" + \
+                      configuration.get_control_link_style() + "\" href=\"" + \
+                      factory.get_frame_edit_entry().get_url() + "&access=" + \
+                      urllib.quote(get_cgi("access")) + \
+                      "&entry_identifier=new_entry\">Add Entry</a></p>\n")
+                build_output("<script language=\"JavaScript\">")
+                build_output("<!--")
+                build_output("function open_control_window()")
+                build_output("    {")
+                build_output("    open_window=window.open('" + \
+                  configuration.get_action_url() + \
+                  "?page_mode=administrative_control'," + \
+                  "'control','toolbar=no,location=no,directories=no,status=no," + \
+                  "menubar=no,scrollbars=yes,width=" + \
+                  str(configuration.get_control_popup_width()) + ",height=" + \
+                  str(configuration.get_control_popup_height()) + \
+                  ",top=100,left=100')")
+                build_output("    }")
+                build_output("// -->")
+                build_output("</script>")
+                #build_output("<p align=\"center\"><a href=\"JavaScript:" + \
+                  #"open_control_window()\" style=\"" + \
+                  #configuration.get_control_link_style() + \
+                  #"\">Configure</a></p>")
+                build_output("<noscript>")
+                build_output("<p><strong>You will need to have JavaScript on, " + \
+                  "with " + \
+                  "popups enabled for this site, to control these pages' " + \
+                  "behavior.</strong></p>")
+                build_output("<noscript>")
+                build_output(configuration.get_page_footer())
     def get_access_level(self):
         return READ_ONLY_ACCESS
     def get_url(self):
@@ -2860,10 +2893,13 @@ class frame_wiki_link(frame):
     """The class responsible for handling wiki-style links."""
     def __init__(self):
         frame.__init__(self)
-    def display(self):
+    def display(self, provided_title = None):
         section_to_search = sections[get_cgi("section_to_search", \
           get_default_section())]
-        title = get_cgi("title")
+        if provided_title == None:
+            title = get_cgi("title")
+        else:
+            title = provided_title
         title = re.sub("<.*?>", "", title)
         documents = []
         for document in section_to_search.get_documents():
@@ -4531,6 +4567,12 @@ def build_output_for_search_result(search_tuple, query):
         build_output("<a href=\"JavaScript:display_full_documents()\" " + \
           "style=\"" + configuration.get_control_link_style() + "\">" + \
           "Return to Search</a>&nbsp;&nbsp;")
+    if configuration.get_program_name() == "searchlog":
+        build_output("<a style=\"" + configuration.get_control_link_style() + \
+          "\" href=\"" + factory.get_frame_edit_entry().get_url() + \
+          "&access=" + urllib.quote(get_cgi("access")) + \
+          "&entry_identifier=new_entry\" target=\"search_result\">Add " + \
+          "Entry</a>&nbsp;&nbsp; ")
     if configuration.get_maximum_quotes() != -1 and length > \
       configuration.get_maximum_quotes():
         if not line_break_written:
@@ -4542,17 +4584,11 @@ def build_output_for_search_result(search_tuple, query):
               "Return to Search</a>&nbsp;&nbsp;")
         elif get_cgi("show_all_quotes", \
           str(configuration.should_show_all_quotes_by_default())) == "0":
-            #build_output("<a href=\"JavaScript:display_only_document('" + \
-              #section.get_html_name() + "','" + \
-              #document.get_relative_filename() + "')\" style=\"" + \
-              #configuration.get_control_link_style() + "\">Show All " + \
-              #str(length) + " Occurrences</a> &nbsp;&nbsp;")
             build_output("<a href=\"JavaScript:display_only_document('" + \
               section.get_html_name() + "','" + \
               document.get_relative_filename() + "')\" style=\"" + \
               configuration.get_control_link_style() + "\">Show All " + \
               "Occurrences</a> &nbsp;&nbsp;")
-    ## Incorporate OS timestamp into document.get_timestamp()
     if configuration.get_program_name() == "searchlog":
         build_output(time.ctime(document.get_timestamp()) + ", r" + \
           document.get_field("Version"))
