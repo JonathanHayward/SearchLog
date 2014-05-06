@@ -116,7 +116,7 @@ def install_or_upgrade():
         os.system("chmod 755 " + private_data_directory + "/*")
         os.system("chmod 733 " + private_data_directory + "/pickled")
         os.system("chmod -R 777 " + private_data_directory + "/pickled/*")
-        os.system("date +%H:%M:%S > " + private_data_directory + "/password")
+        os.system("date +%H-%M-%S > " + private_data_directory + "/password")
         os.system("chmod 711 " + private_data_directory)
         os.system("rm -rf " + html_root_directory)
         os.system("mkdir -p " + html_root_directory)
@@ -124,6 +124,8 @@ def install_or_upgrade():
         os.system("cp -r html " + html_root_directory)
         os.system("chmod 755 " + html_root_directory)
         os.system("chmod 644 " + html_root_directory + "/*")
+    elif get_script_mode() == "upgrade":
+        os.system("cp html/transparent.gif " + html_root_directory)
     os.system("rm -rf " + cgi_executable_path)
     os.system("mkdir -p " + cgi_executable_path)
     os.system("rm -rf " + cgi_executable_path)
@@ -299,6 +301,16 @@ URL you specified for the document URL? This should be something like
         output("""
 HTML root directory""")
         html_root_directory = get_value(html_root_directory)
+    else:
+        output(\
+"""
+What is the full system path for material to be so as to be available at the
+URL you specified for the document URL? This should be something like
+"/var/www/html/searchlog/" or "~/public_html/searchlog/".  
+""")
+        output("""
+HTML root directory""")
+        html_root_directory = get_value(html_root_directory)
     output(\
 """
 What is the directory that private data should be stored in? This should be
@@ -357,13 +369,6 @@ You have selected the following options:
     Document URL: """ + document_url + """
     Full Python path: """ + full_python_path + """
     Private data directory: """ + private_data_directory)
-    if get_script_mode() == "upgrade":
-        output(\
-"""
-
-    Has installation been customized: """ + has_installation_been_customized)
-        if is_true(has_installation_been_customized):
-            pass
     output(\
 """
 

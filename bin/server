@@ -1,6 +1,103 @@
 #!FULL_PYTHON_PATH
 #
 # $Log: insightd,v $
+# Revision 1.66  2004/12/11 20:27:37  jonathan
+# Commit after code cleanup that removed debugging and commented out code.
+#
+# Revision 1.65  2004/12/11 20:24:06  jonathan
+# Commit of released code, after search bugfix, before removing debugging output.
+#
+# Revision 1.64  2004/12/09 22:39:03  jonathan
+# Fixed so bottom line is left-justified rather than centered.
+#
+# Revision 1.63  2004/12/08 22:36:18  jonathan
+# Changed the features so the first item in a search is moved to the head of a
+# list regardless of whether there are other items in the search.
+#
+# Revision 1.62  2004/12/08 22:30:12  jonathan
+# Debugged previous feature.
+#
+# Revision 1.61  2004/12/08 22:18:19  jonathan
+# Added code to make cross-reference links tolerant of extra old versions of a
+# file.
+#
+# Revision 1.60  2004/12/08 22:03:29  jonathan
+# Commit before providing workaround for duplicate versions of a single file
+# turning up in a search.
+#
+# Revision 1.59  2004/09/27 20:11:44  jonathan
+# Basically working, if slowly.
+#
+# Revision 1.58  2004/09/27 19:25:40  jonathan
+# SearchLog is working.
+#
+# Revision 1.57  2004/09/25 21:14:39  jonathan
+# Mostly working commit.
+#
+# Revision 1.56  2004/09/25 19:19:16  jonathan
+# Interim commit whilst trying to find out why program is moving slowly.
+#
+# Revision 1.55  2004/09/25 17:32:02  jonathan
+# Apparently working (insight) commit after trying to unfork.
+#
+# Revision 1.54  2004/09/25 14:38:00  jonathan
+# Commit at the beginning of trying to unfork.
+#
+# Revision 1.53  2004/09/24 21:24:12  jonathan
+# Fixed errors relating to mis-indexed search criteria (future additions should
+# be to end of search criteria, not beginning). This helped section-by-section
+# searching to work.
+#
+# Revision 1.52  2004/09/24 20:42:32  jonathan
+# Commit after getting quotation searching to work.
+#
+# Revision 1.51  2004/09/24 20:02:39  jonathan
+# Commit after finding problem (== for assignment) that was causing everything to
+# be matched.
+#
+# Revision 1.50  2004/09/21 00:26:15  jonathan
+# Commit after bugfix.
+#
+# Revision 1.49  2004/09/20 22:19:04  jonathan
+# Interim commit when quotation still isn't working.
+#
+# Revision 1.48  2004/09/20 22:06:50  jonathan
+# Commit while non-quotation functions are working.
+#
+# Revision 1.47  2004/09/20 21:26:01  jonathan
+# Interim commit while getting quotation searching to work. Boolean query was
+# fixed.
+#
+# Revision 1.46  2004/09/20 20:56:13  jonathan
+# Commit after fixing boolean query problem.
+#
+# Revision 1.45  2004/09/17 22:45:34  jonathan
+# Commit after allowing customisation of default search method.
+#
+# Revision 1.44  2004/09/17 19:47:44  jonathan
+# Commit after program works after migrating to dumping to and restoring from a
+# temporary file. It seems to be noticeably slower, but not severely slower.
+#
+# Revision 1.43  2004/09/17 18:48:27  jonathan
+# Working commit before attempting to have data pickled to file, instead of
+# stream, and sending filename, to circumvent problem that prevents "post" method
+# from working.
+#
+# Revision 1.42  2004/09/14 23:24:35  jonathan
+# Commit after enabling configuration menu to reload thesaurus.
+#
+# Revision 1.41  2004/09/14 22:02:20  jonathan
+# Commit after adding modification to look at private thesaurus alone. I hope to
+# be building a thesaurus up.
+#
+# Revision 1.40  2004/09/14 20:05:07  jonathan
+# Commit after getting thesaurus to work and before having thesaurus only load
+# private data.
+#
+# Revision 1.39  2004/07/26 14:45:02  jonathan
+# Made it so if you make a search and google whack exactly one result, that jumps
+# to the top of the most recently viewed list.
+#
 # Revision 1.38  2004/06/08 16:09:58  jonathan
 # Committed after making More Like This section-sensitive.
 #
@@ -91,6 +188,7 @@ flexible enough to be modifiable to other use."""
 ADMINISTRATIVE_ACCESS = 5
 CAN_SEQUENCE_OVER_DICTIONARIES = 1
 NO_ACCESS = 2
+ONCE = 1
 READ_ONLY_ACCESS = 3
 READ_AND_WRITE_ACCESS = 4
 SHOULD_LOG_ERRORS = 0
@@ -128,9 +226,10 @@ class ancestor:
         else:
             return str(0)
 
-class boolean_parser:
+class boolean_parser(ancestor):
     def __init__(self, get_word_score = None, parsed_query = None, \
       raw_query = ""):
+        ancestor.__init__(self)
         self.get_word_score = get_word_score
         self.type = "undefined"
         self.query = raw_query
@@ -141,6 +240,85 @@ class boolean_parser:
         self.use_parsed_query()
     def bad_query(self):
         pass
+    def get_individual_word_score(self, word):
+        if self.type == "and":
+            return min(self.left_child.get_individual_word_score(word),
+              self.right_child.get_individual_word_score(word))
+        if self.type == "not":
+            if self.child.get_individual_word_score(word) > 0:
+                return 0
+            else:
+                return 1
+        if self.type == "or":
+            return max(self.left_child.get_individual_word_score(word),
+              self.right_child.get_individual_word_score(word))
+        if self.type == "parenthesized":
+            return self.child.get_individual_word_score(word)
+        if self.type == "quotation":
+            result = 0
+            lower_word = string.lower(word)
+            for matched_word in self.tokenized:
+                if configuration.should_enable_thesaurus():
+                    result += thesaurus.get_score(lower_word, \
+                      matched_word)
+                else:
+                    if word == matched_word:
+                        return 1
+            return result
+        if self.type == "undefined":
+            return 1
+        if self.type == "word":
+            result = 0
+            lower_word = string.lower(word)
+            for matched_word in self.words:
+                if configuration.should_enable_thesaurus():
+                    result += thesaurus.get_score(lower_word, \
+                      matched_word)
+                else:
+                    if word == matched_word:
+                        return 1
+                    else:
+                        return 0
+            return result
+    def get_score(self, document):
+        if self.type == "and":
+            return min(self.left_child.get_score(document),
+              self.right_child.get_score(document))
+        if self.type == "not":
+            if self.child.get_score(document) > 0:
+                return 0
+            else:
+                return 1
+        if self.type == "or":
+            return max(self.left_child.get_score(document),
+              self.right_child.get_score(document))
+        if self.type == "parenthesized":
+            return self.child.get_score(document)
+        if self.type == "quotation":
+            document_tokens = document.get_tokens(1)
+            product = 1
+            if not hasattr(self, "tokenized"):
+                self.tokenized = tokenize(self.query)
+            for word in self.tokenized:
+                product *= self.get_word_score(document, word)
+            if product > 0:
+                match_found = 0
+                for index in range(len(document_tokens) - len(self.tokenized)):
+                    if document_tokens[index:index + len(self.tokenized)] == \
+                      self.tokenized:
+                        match_found = 1
+                if match_found:
+                    return product
+                else:
+                    return 0
+            return product
+        if self.type == "undefined":
+            return 1
+        if self.type == "word":
+            result = 0
+            for word in self.words:
+                result += self.get_word_score(document, word)
+            return result
     def get_words(self):
         if self.type == "and":
             result = self.left_child.get_words() + self.right_child.get_words()
@@ -148,6 +326,8 @@ class boolean_parser:
             result = self.child.get_words()
         if self.type == "or":
             result = self.left_child.get_words() + self.right_child.get_words()
+        if self.type == "quotation":
+            result = self.tokenized
         if self.type == "parenthesized":
             result = self.child.get_words()
         if self.type == "undefined":
@@ -157,13 +337,22 @@ class boolean_parser:
         return sort_by_descending_length(result)
     def parse_query(self):
         current_segment = ""
-        in_word = 0
+        closing_of_quotation = 0
+        in_quotation = 0
         in_re = 0
+        in_word = 0
         last_segment = None
         parenthesis_depth = 0
         tokenized_query = []
         for index in range(len(self.query)):
             should_append_current_character = 1
+            if self.query[index] == "\"":
+                if not in_quotation:
+                    in_quotation = 1
+                    should_append_current_character = 0
+                else:
+                    in_quotation = 0
+                    closing_of_quotation = 1
             if self.query[index] == "(":
                 parenthesis_depth += 1
                 in_word = 0
@@ -183,7 +372,7 @@ class boolean_parser:
                 in_word = 1
                 current_segment += "."
                 in_re = 1
-            elif re.match("\W", self.query[index]):
+            elif re.match("\W", self.query[index]) and not in_quotation:
                 if in_word and parenthesis_depth == 0:
                     if string.lower(current_segment) == "or":
                         tokenized_query.append((None, "or"))
@@ -197,17 +386,20 @@ class boolean_parser:
                         tokenized_query.append((None, "not"))
                     else:
                         if len(tokenized_query) > 0 and \
-                          tokenized_query[len(tokenized_query) - 1][1] == \
-                          "word":
+                          (tokenized_query[len(tokenized_query) - 1][1] == \
+                          "word" or tokenized_query[len(tokenized_query) - \
+                          1][1] == "parenthesized"):
                             tokenized_query.append((None, "and"))
                         tokenized_query.append(((string.lower(current_segment), in_re), "word"))
                 in_word = 0
-            elif re.match("\w", self.query[index]):
+            elif re.match("\w", self.query[index]) and not in_quotation:
                 if not in_word and parenthesis_depth == 0:
                     current_segment = ""
                 in_word = 1
             if should_append_current_character:
                 current_segment += self.query[index]
+            if closing_of_quotation:
+                tokenized_query.append((current_segment[:-1], "quotation"))
         if in_word:
             if string.lower(current_segment) == "or":
                 tokenized_query.append((None, "or"))
@@ -229,7 +421,6 @@ class boolean_parser:
                 if index == 0 or index == len(self.parsed_query):
                     self.bad_query()
                 self.type = "or"
-                print(self.parsed_query[index + 1:])
                 self.left_child = boolean_parser(self.get_word_score, \
                   self.parsed_query[:index], "")
                 self.right_child = boolean_parser(self.get_word_score, \
@@ -255,43 +446,25 @@ class boolean_parser:
                 self.child = boolean_parser(self.get_word_score, \
                   self.parsed_query[index + 1:], "")
                 return
-        if len(self.parsed_query) > 0:
-            if self.parsed_query[0][1] == "parenthesized":
-                self.type = "parenthesized"
-                self.child = factory.get_boolean_parser(self.get_word_score, self.parsed_query[0][0])
+        for index in range(len(self.parsed_query)):
+            type = self.parsed_query[index][1]
+            if type == "quotation":
+                self.type = "quotation"
+                self.tokenized = tokenize(self.parsed_query[index][0])
                 return
-            if self.parsed_query[0][1] == "word":
-                self.type = "word"
-                self.word = self.parsed_query[0][0][0]
-                self.is_re = self.parsed_query[0][0][1]
-                if self.is_re:
-                    self.words = word_numberer.get_matching_words(self.word)
-                else:
-                    self.words = [self.word]
-                self.numbered_words = []
-                for word in self.words:
-                    self.numbered_words.append(word_numberer.get_number(word))
-    def get_score(self, document):
-        if self.type == "and":
-            return min(self.left_child.get_score(document),
-              self.right_child.get_score(document))
-        if self.type == "not":
-            if self.child.get_score(document) > 0:
-                return 0
-            else:
-                return 1
-        if self.type == "or":
-            return max(self.left_child.get_score(document),
-              self.right_child.get_score(document))
-        if self.type == "parenthesized":
-            return self.child.get_score(document)
-        if self.type == "undefined":
-            return 1
-        if self.type == "word":
-            result = 0
-            for word in self.numbered_words:
-                result += self.get_word_score(document, word)
-            return result
+        if len(self.parsed_query) > 0:
+                if self.parsed_query[0][1] == "parenthesized":
+                    self.type = "parenthesized"
+                    self.child = factory.get_boolean_parser(self.get_word_score, self.parsed_query[0][0])
+                    return
+                if self.parsed_query[0][1] == "word":
+                    self.type = "word"
+                    self.word = self.parsed_query[0][0][0]
+                    self.is_re = self.parsed_query[0][0][1]
+                    if self.is_re:
+                        self.words = word_numberer.get_matching_words(self.word)
+                    else:
+                        self.words = [self.word]
 
 class cache_class(ancestor):
     def __init__(self):
@@ -342,7 +515,7 @@ class cache_class(ancestor):
                 return ""
             query_string = parameters[2]
             criteria = parameters[3]
-            if criteria[2] or criteria[3]:
+            if criteria[3] or criteria[4]:
                 limit = -1
             else:
                 limit = configuration.get_maximum_quotes()
@@ -385,9 +558,9 @@ class cache_class(ancestor):
       relative_filename, criteria):
         return self.get_information("more_like_this", (query_string, \
           section_html_name, relative_filename, criteria))
-    def get_search_results(self, query_string, criteria):
+    def get_search_results(self, query_string, title_prefix, criteria):
         return self.get_information("search_results", (query_string, \
-          criteria))
+          title_prefix, criteria))
     def get_word_pair_score(self, language_identifier, first_word, second_word):
         return self.get_information("word_pair_score", \
           (language_identifier, first_word, second_word))
@@ -467,7 +640,6 @@ class configuration_class(ancestor):
     def get_body_tag(self):
         return self.body_tag
     def get_cache_duration(self):
-        return 0
         if hasattr(self, "cache_duration"):
             return self.cache_duration
         else:
@@ -481,13 +653,13 @@ class configuration_class(ancestor):
     def get_control_popup_width(self):
         return 800
     def get_debug_level(self):
-        return 5
+        # (Integer) debug levels go from 0 (no debugging) to 5 (highest).
+        return 0
     def get_default_format(self):
         if hasattr(self, "default_format"):
             return self.default_format
         else:
-            #return "mixed"
-            return "timestamp"
+            return "mixed"
     def get_default_style(self, color = "#808080", should_color = 1):
         if should_color:
             return "color: " + color
@@ -500,7 +672,7 @@ class configuration_class(ancestor):
             return "_blank"
     def get_default_text(self):
         return read_file("default_text")
-    def get_delay_between_monolith_saves(self):
+    def get_delay_between_saves(self):
         return  3600
         #return 1
     def get_displayable_frames_list(self):
@@ -594,9 +766,13 @@ class configuration_class(ancestor):
     def get_frame_width(self, frame_name):
         return "*"
     def get_frames_list(self):
-        return ("administrative_control", "edit_entry", "master", \
-          "process_edit_entry", "search", "search_result", "user_control", \
-          "wiki_link");
+        if configuration.get_program_name() == "searchlog":
+            return ("administrative_control", "edit_entry", "master", \
+              "process_edit_entry", "search", "search_result", "user_control", \
+              "wiki_link");
+        else: # data mine by default
+            return ("administrative_control", "master", "search", \
+              "search_result", "user_control");
     def get_histogram_weights(self):
         return [4, 2, 1]
     def get_internal_window_displayable_frames_list(self):
@@ -656,7 +832,8 @@ class configuration_class(ancestor):
     def get_query_terminator(self):
         return "@@END_OF_QUERY@@"
     def get_quote_link_style_modifier(self):
-        return "font-size: smaller"
+        #return "font-size: smaller"
+        return ""
     def get_result_link_style(self):
         return "text-decoration: none; font-weight: bold; font-size: larger"
     def get_sacrifice_memory_for_speed_level(self):
@@ -668,7 +845,10 @@ class configuration_class(ancestor):
     def get_single_line_entry_text_fields(self):
         return ["Title"]
     def get_userland_text_width(self):
-        return 76
+        if hasattr(self, "userland_text_width"):
+            return self.userland_text_width
+        else:
+            return 76
     def get_text_default_color(self):
         return (128, 128, 128)
     def get_text_match_color(self):
@@ -676,7 +856,10 @@ class configuration_class(ancestor):
     def get_text_size(self):
         return 40
     def get_textarea_height(self):
-        return 47
+        if hasattr(self, "textarea_height"):
+            return self.textarea_height
+        else:
+            return 39
     def get_title(self):
         if hasattr(self, "title"):
             return self.title
@@ -687,6 +870,11 @@ class configuration_class(ancestor):
             return self.welcome_page
         else:
             return read_file("welcome")
+    def get_welcome_snippet(self):
+        if hasattr(self, "welcome_snippet"):
+            return self.welcome_snippet
+        else:
+            return ""
     def get_wiki_link_style(self):
         return self.get_control_link_style()
         #return ""
@@ -710,14 +898,20 @@ class configuration_class(ancestor):
         self.body_tag = body_tag
     def set_cache_duration(self, cache_duration):
         self.cache_duration = cache_duration
+    def set_default_format(self, default_format):
+        self.default_format = default_format
     def set_display_more_like_this(self, display_more_like_this):
         self.display_more_like_this = display_more_like_this
+    def set_enable_thesaurus(self, enable_thesaurus):
+        self.enable_thesaurus = enable_thesaurus
     def set_exact_match_threshold(self, exact_match_threshold):
         self.exact_match_threshold = exact_match_threshold
     def set_excerpt_radius(self, excerpt_radius):
         self.excerpt_radius = excerpt_radius
     def set_forget_file_contents(self, forget_file_contents):
         self.forget_file_contents = forget_file_contents
+    def set_hide_configure_link(self, hide_configure_link):
+        self.hide_configure_link = hide_configure_link
     def set_matches_per_page(self, matches_per_page):
         self.matches_per_page = matches_per_page
     def set_normalizing_lower_bound(self, normalizing_lower_bound):
@@ -736,10 +930,20 @@ class configuration_class(ancestor):
         self.save_cache = save_cache
     def set_show_all_quotes_by_default(self, show_all_quotes_by_default):
         self.show_all_quotes_by_default = show_all_quotes_by_default
+    def set_textarea_height(self, textarea_height):
+        self.textarea_height = textarea_height
+    def set_thesaurus_match_partial_words(self, thesaurus_match_partial_words):
+        self.thesaurus_match_partial_words = thesaurus_match_partial_words
     def set_title(self, title):
         self.title = title
+    def set_use_thesaurus_by_default(self, use_thesaurus_by_default):
+        self.use_thesaurus_by_default = use_thesaurus_by_default
+    def set_userland_text_width(self, userland_text_width):
+        self.userland_text_width = userland_text_width
     def set_welcome_page(self, welcome_page):
         self.welcome_page = welcome_page
+    def set_welcome_snippet(self, welcome_snippet):
+        self.welcome_snippet = welcome_snippet
     def should_allow_administrative_controls(self):
         return 1
     def should_allow_advanced_search(self):
@@ -748,7 +952,10 @@ class configuration_class(ancestor):
         else:
             return 1
     def should_allow_format_choice(self):
-        return 1
+        if configuration.get_program_name() == "searchlog":
+            return 1
+        else:
+            return 0
     def should_allow_title_prefix_choice(self):
         return 1
     def should_authenticate(self):
@@ -775,16 +982,31 @@ class configuration_class(ancestor):
         if hasattr(self, "display_more_like_this"):
             return self.display_more_like_this
         else:
+            return 1
+    def should_enable_thesaurus(self):
+        if hasattr(self, "enable_thesaurus"):
+            return self.enable_thesaurus
+        else:
             return 0
     def should_forget_file_contents(self):
         if hasattr(self, "forget_file_contents"):
             return self.forget_file_contents
         else:
             return 1
+    def should_hide_configure_link(self):
+        if hasattr(self, "hide_configure_link"):
+            return self.hide_configure_link
+        else:
+            return 0
     def should_load_documents_on_initialization(self):
         return 1
     def should_override_styles(self):
         return 0
+    def should_thesaurus_match_partial_words(self):
+        if hasattr(self, "match_partial_words"):
+            return self.match_partial_words
+        else:
+            return 0
     def should_save_cache(self):
         if hasattr(self, "save_cache"):
             return self.save_cache
@@ -799,6 +1021,11 @@ class configuration_class(ancestor):
             return 1
     def should_use_oracle(self):
         return self.get_program_mode() == "oracle"
+    def should_use_thesaurus_by_default(self):
+        if hasattr(self, "use_thesaurus_by_default"):
+            return self.use_thesaurus_by_default
+        else:
+            return 0
 
 class document(ancestor):
     def __init__(self, filename, section):
@@ -833,9 +1060,14 @@ class document(ancestor):
     def get_displayable_result(self):
         return cache.get_highlighted_page(self)
     def get_excerpts(self, query_to_highlight, limit = -1):
-        matches = []
+        if configuration.get_program_name() == "searchlog":
+            matches = []
+            indicator = 0
+        else: # Default to datamine.
+            (matches, indicator) = \
+              self.get_excerpts_internal(query_to_highlight, limit)
         workbench = []
-        if matches == []:
+        if configuration.get_program_name() == "searchlog":
             workbench.append("<tr><td colspan=\"2\" width=\"100%\">")
             paragraph = self.get_field("Text")
             paragraph = re.sub("<iframe.*?>", "", paragraph, re.DOTALL)
@@ -862,7 +1094,7 @@ class document(ancestor):
         for current_match in sequence(matches):
             index += 1
             if index == limit:
-                return ("".join(workbench), len(matches))
+                return ("".join(workbench), indicator)
             score = query_to_highlight.get_score_for_word( \
               self.get_language(), current_match[1])
             workbench.append("<tr><td align=\"right\" valign=\"top\">")
@@ -912,17 +1144,24 @@ class document(ancestor):
                 else:
                     workbench.append(word)
             workbench.append("</td></tr>")
-        return ("".join(workbench), len(matches))
-    def get_excerpts_internal(self, query_to_highlight):
+        return ("".join(workbench), len(matches), indicator)
+    def get_excerpts_internal(self, query_to_highlight, limit):
         result = []
+        current = 0
         tokens = self.get_body_tokens()
         language = self.get_language()
-        excerpt_radius = factory.get_search_criteria()[4]
-        if query_to_highlight.get_search_criteria()[0]:
+        excerpt_radius = factory.get_search_criteria()[5]
+        # The line below does something desirable, but it makes execution
+        # monumentally slow.
+        #if query_to_highlight.get_search_criteria()[0]:
+        if 0:
             for index in range(len(tokens)):
                 current_token = string.lower(tokens[index])
                 if query_to_highlight.is_approximate_match( \
                   language, current_token):
+                    current += 1
+                    if current > limit:
+                        return (result, current)
                     result.append((tokens[max(0, index - \
                       excerpt_radius):index], \
                       tokens[index], tokens[index + 1:index + 1 + \
@@ -931,11 +1170,14 @@ class document(ancestor):
             for index in range(len(tokens)):
                 current_token = string.lower(tokens[index])
                 if query_to_highlight.get_quick_exact_match(current_token):
+                    current += 1
+                    if current > limit:
+                        return (result, current)
                     result.append((tokens[max(0, index - \
                       excerpt_radius):index], \
                       tokens[index], tokens[index + 1:index + 1 + \
                       excerpt_radius]))
-        return result
+        return (result, -1)
     def get_field(self, field_name):
         expression = re.compile("<!-- field_" + field_name + " .*? -->", \
           re.DOTALL)
@@ -1026,6 +1268,7 @@ class document(ancestor):
         token_list = self.get_all_tokens()
         for current_token in sequence(token_list):
             self.histogram.add_occurrence(string.lower(current_token))
+            #debug_log(current_token)
         self.histogram.finalize()
         for consumer in sequence(factory.list_token_list_consumers()):
             consumer.process_token_list(token_list)
@@ -1040,16 +1283,6 @@ class document(ancestor):
           self.section.get_root())
     def tokenize(self, text):
         return tokenize_internal(text)
-    def tokenize_internal(self, text):
-        working_text = text
-        working_text = re.sub("<!--.*?-->", " ", working_text, re.DOTALL)
-        working_text = re.sub("<.*?>", " ", working_text, re.DOTALL)
-        working_list = re.split("\W+", working_text)
-        result = []
-        for current_token in sequence(working_list):
-            if current_token != "":
-                result.append(current_token)
-        return result
 
 class factory_generator(ancestor):
     """This is broader than a factory class in that it is also a central
@@ -1161,6 +1394,8 @@ class factory_generator(ancestor):
         return search(query, criteria, sections_of_files)
     def get_search_criteria(self):
         result = []
+        result.append(int(get_cgi("should_use_thesaurus", \
+          configuration.should_use_thesaurus_by_default())))
         result.append(int(get_cgi("should_match_partial_words", "0")))
         result.append(get_cgi("section_to_search", get_default_section()))
         result.append(int(get_cgi("show_all_quotes", \
@@ -1175,6 +1410,8 @@ class factory_generator(ancestor):
         return section(html_name, name, root)
     def get_subsection(self, parent = None):
         return subsection(parent)
+    def get_thesaurus(self):
+        return thesaurus_class()
     def get_thread(self, group=None, target=None, name=None, args=(), \
       kwargs={}):
         return threading.Thread(group, target, name, args, kwargs)
@@ -1223,21 +1460,31 @@ class folder_tab(ancestor):
         result.append("<input type=\"hidden\" " + \
           "name=\"control_actions_selected_action\" " + \
           "value=\"none\">")
-        if configuration.should_save_cache():
+        if configuration.should_enable_thesaurus():
             result.append("<p><a style=\"" + \
               configuration.get_control_link_style() + "\" " + \
-              "href=\"JavaScript:perform_action('reread_documents')\">Reread "\
-              + "Documents Being Searched and Save Cached Data</a></p>")
-        else:
-            result.append("<p><a style=\"" + \
-              configuration.get_control_link_style() + "\" " + \
-              "href=\"JavaScript:perform_action('reread_documents')\">Reread "\
-              + "Documents Being Searched</a></p>")
+              "href=\"JavaScript:perform_action('reread_thesaurus_and_save_monolith')\">Reload " + \
+              "Thesaurus</a></p>")
+        if configuration.get_program_name() == "datamine":
+            if configuration.should_save_cache():
+                result.append("<p><a style=\"" + \
+                  configuration.get_control_link_style() + "\" " + \
+                  "href=\"JavaScript:perform_action('reread_documents')\">Reread"\
+                  + " Documents Being Searched and Save Cached Data</a></p>")
+            else:
+                result.append("<p><a style=\"" + \
+                  configuration.get_control_link_style() + "\" " + \
+                  "href=\"JavaScript:perform_action('reread_documents')\">Reread"\
+                  + " Documents Being Searched</a></p>")
         if not THREADING_LEVEL >= 1 or configuration.should_save_cache():
             result.append("<p><a style=\"" + configuration.get_control_link_style() + \
               "\" " + \
               "href=\"JavaScript:perform_action('save_cache')\">Save " + \
               "Cached Data</a></p>")
+        result.append("<p><a style=\"" + \
+          configuration.get_control_link_style() + "\" " + \
+          "href=\"JavaScript:perform_action('shut_down_server')\">Shut " + \
+          "Down Server</a></p>")
         result.append(self.get_submit_link())
         return "".join(result)
     def get_appearance_control(self, arguments, level):
@@ -1249,10 +1496,14 @@ class folder_tab(ancestor):
         result.append(get_administrative_textarea( \
           "control_appearance_body_tag", configuration.get_body_tag()) + \
           "</p>")
-        result.append("<p>Welcome Page Body:<br>")
+        result.append("<p>Welcome Page Body (Right hand side of screen):<br>")
         result.append(get_administrative_textarea( \
           "control_appearance_welcome_page", \
           configuration.get_welcome_page()) + "</p>")
+        result.append("<p>Welcome Snippet (Left hand side of screen):<br>")
+        result.append(get_administrative_textarea( \
+          "control_appearance_welcome_snippet", \
+          configuration.get_welcome_snippet()) + "</p>")
         result.append("Page Header:<br>")
         result.append(get_administrative_textarea("control_appearance_page_header", \
           configuration.get_page_header()) + "</p>")
@@ -1348,20 +1599,73 @@ class folder_tab(ancestor):
     def get_miscellaneous_control(self, arguments, level):
         result = []
         result.append("<p>How public or private should this CGI script be? ")
-        result.append(get_select("control_miscellaneous_access_level", \
-          [[NO_ACCESS, "Private"], \
-          [READ_ONLY_ACCESS, \
-          "Everyone can see (but not change) materials here."], \
-          [READ_AND_WRITE_ACCESS, \
-          "Everyone can see and make changes to materials here."], \
-          [ADMINISTRATIVE_ACCESS, \
-          "Everyone has administrative access (not reccommended)."]], \
-          configuration.get_access_level()))
+        if configuration.get_program_name() == "searchlog":
+            result.append(get_select("control_miscellaneous_access_level", \
+              [[NO_ACCESS, "Private"], \
+              [READ_ONLY_ACCESS, \
+              "Everyone can see (but not change) materials here."], \
+              [READ_AND_WRITE_ACCESS, \
+              "Everyone can see and make changes to materials here."], \
+              [ADMINISTRATIVE_ACCESS, \
+              "Everyone has administrative access (not reccommended)."]], \
+              configuration.get_access_level()))
+        else:
+            result.append(get_select("control_miscellaneous_access_level", \
+              [[NO_ACCESS, "Private"], \
+              [READ_ONLY_ACCESS, \
+              "Everyone can see materials here."], \
+              [ADMINISTRATIVE_ACCESS, \
+              "Everyone has administrative access (not reccommended)."]], \
+              configuration.get_access_level()))
+        result.append("</p>")
+        if configuration.get_program_name() == "searchlog":
+            result.append("<p>What should the default format be? ")
+            result.append(get_format_choice(configuration.get_default_format(), \
+              "control_miscellaneous_default_format"))
+        result.append("</p>")
+        result.append("<p>Should users be able to use a thesaurus? ")
+        result.append("If yes, then this script will look in <tt>")
+        result.append(DOCUMENT_ROOT)
+        result.append("/thesaurus</tt> for comma-separated lists of ")
+        result.append("synonyms, one per line. ")
+        result.append("<select name=\"control_miscellaneous_should_enable_thesaurus\">")
+        if configuration.should_enable_thesaurus():
+            result.append("<option value=\"1\" selected>Yes</option>")
+            result.append("<option value=\"0\">No</option>")
+        else:
+            result.append("<option value=\"1\">Yes</option>")
+            result.append("<option value=\"0\" selected>No</option>")
+        result.append("</select></p>")
+        result.append("<p><em>Use this feature with caution: a minimal and ")
+        result.append("handcrafted thesaurus can be a real boon, but ")
+        result.append("downloading and plugging in a thesaurus only looks ")
+        result.append("good on paper.</em></p>")
+        result.append("<p>If the thesaurus is enabled, should it match ")
+        result.append("partial words? ")
+        result.append("<select name=\"control_miscellaneous_should_thesaurus_match_partial_words\">")
+        if configuration.should_enable_thesaurus():
+            result.append("<option value=\"1\" selected>Yes</option>")
+            result.append("<option value=\"0\">No</option>")
+        else:
+            result.append("<option value=\"1\">Yes</option>")
+            result.append("<option value=\"0\" selected>No</option>")
+        result.append("</select></p>")
         result.append("<p>How many results should be shown per page? ")
         result.append("<input type=\"text\" ")
         result.append("name=\"control_miscellaneous_matches_per_page\" ")
         result.append("size=\"5\" value=\"" + \
           str(configuration.get_matches_per_page()) + "\"></p>")
+        result.append("<p>How many columns wide should most editable text be? ")
+        result.append("<input type=\"text\" ")
+        result.append("name=\"control_miscellaneous_userland_text_width\" ")
+        result.append("size=\"5\" value=\"" + \
+          str(configuration.get_userland_text_width()) + "\"></p>")
+        result.append("<p>How many rows tall should most editable ")
+        result.append("<tt>textarea</tt>s be? ")
+        result.append("<input type=\"text\" ")
+        result.append("name=\"control_miscellaneous_textarea_height\" ")
+        result.append("size=\"5\" value=\"" + \
+          str(configuration.get_textarea_height()) + "\"></p>")
         result.append("<p>How many words should be shown before and after ")
         result.append("each keyword quoted in the search results? ")
         result.append("<input type=\"text\" ")
@@ -1402,6 +1706,15 @@ class folder_tab(ancestor):
             result.append("<option value=\"1\">Yes</option>")
             result.append("<option value=\"0\" selected>No</option>")
         result.append("</select></p>")
+        result.append("<p>Should the thesaurus be used by default? ")
+        result.append("<select name=\"control_miscellaneous_should_use_thesaurus_by_default\">")
+        if configuration.should_use_thesaurus_by_default():
+            result.append("<option value=\"1\" selected>Yes</option>")
+            result.append("<option value=\"0\">No</option>")
+        else:
+            result.append("<option value=\"1\">Yes</option>")
+            result.append("<option value=\"0\" selected>No</option>")
+        result.append("</select></p>") 
         result.append("<p>Should the option of an advanced search be made " + \
           "available? ")
         result.append("<select name=\"control_miscellaneous_should_allow_advanced_search\">")
@@ -1415,6 +1728,18 @@ class folder_tab(ancestor):
         result.append("<p>Should the cache contents be saved? ")
         result.append("<select name=\"control_miscellaneous_should_save_cache\">")
         if configuration.should_save_cache():
+            result.append("<option value=\"1\" selected>Yes</option>")
+            result.append("<option value=\"0\">No</option>")
+        else:
+            result.append("<option value=\"1\">Yes</option>")
+            result.append("<option value=\"0\" selected>No</option>")
+        result.append("</select></p>")
+        result.append("<p>Should the configure link at the bottom of the left")
+        result.append(" panel be camouflaged? It will still be there, and ")
+        result.append("this is <em>not</em> a security measure, but it ")
+        result.append("will be less likely to trip up your users.")
+        result.append("<select name=\"control_miscellaneous_should_hide_configure_link\">")
+        if configuration.should_hide_configure_link():
             result.append("<option value=\"1\" selected>Yes</option>")
             result.append("<option value=\"0\">No</option>")
         else:
@@ -1478,6 +1803,11 @@ class folder_tab(ancestor):
               "control_section_document_root", \
               condense_path(section.get_root())))
             result.append("</p>")
+        if configuration.get_program_name() == "datamine":
+            result.append("<p>Relative path to home page for document:<br>")
+            result.append(get_administrative_text_box( \
+              "control_section_index", condense_path(section.get_index())))
+            result.append("</p>")
         for language in sequence(get_languages()):
             if section.get_language_identifier == language.get_html_name() or \
               language.get_name() == "Generic" and \
@@ -1486,6 +1816,29 @@ class folder_tab(ancestor):
                 result.append("name=\"control_section_language\" value=\"")
                 result.append(language.get_html_name())
                 result.append("\">")
+        if configuration.get_program_name() == "datamine":
+            result.append("<p>Regular expression patterns to <strong>in</strong>clude")
+            result.append(" (it is OK to leave this blank; if you leave both these blank, any document will be accepted):<br>")
+            result.append(get_administrative_textarea( \
+              "control_section_patterns_to_accept", \
+              section.get_text_patterns_to_accept()))
+            result.append("</p>")
+            result.append("<p>Regular expression patterns to <strong>ex</strong>clude")
+            result.append(" (it is OK to leave this blank):<br>")
+            result.append(get_administrative_textarea( \
+              "control_section_patterns_to_deny", \
+              section.get_text_patterns_to_deny()))
+            result.append("</p>")
+            if not is_subsection:
+                result.append("<p>URL prefix for documents' root (what would you type in a browser to browse their root):<br>")
+                result.append(get_administrative_text_box( \
+                  "control_section_url_prefix", section.get_url_prefix()))
+                result.append("</p>")
+                result.append("<p>URL prefix for server's root (what would you ")
+                result.append("type in a browser to browse server's root):<br>")
+                result.append(get_administrative_text_box( \
+                  "control_section_url_root", section.get_url_root()))
+                result.append("</p>")
         result.append("<p>Do you wish to <strong>delete</strong> this")
         if is_subsection:
             result.append(" subsection? ")
@@ -1615,7 +1968,11 @@ class frame_control(frame):
           "system", function_source.get_system_control, ())
         user_tab = factory.get_folder_tab("User Preferences (Default)", \
           "user", function_source.get_user_control, (1))
-        tab_list = [ appearance_tab, miscellaneous_tab ]
+        if configuration.get_program_name() == "searchlog":
+            tab_list = [ actions_tab, appearance_tab, miscellaneous_tab ]
+        else:
+            tab_list = [actions_tab, appearance_tab, miscellaneous_tab, \
+              sections_tab, subsections_tab, ]
         current_tab = miscellaneous_tab
         build_output_tabs(level, tab_list, current_tab)
         build_output("<p align=\"center\"><a style=\"" + \
@@ -1629,6 +1986,13 @@ class frame_control(frame):
         action = get_cgi("control_actions_selected_action")
         if action == "none":
             return
+        elif action == "reread_thesaurus_and_save_monolith":
+            if THREADING_LEVEL >= 1:
+                thread = factory.get_thread(None, \
+                  reread_thesaurus_and_save_monolith, None, [], {})
+                thread.start()
+            else:
+                reread_thesaurus_and_save_monolith()
         elif action == "reread_documents":
             if THREADING_LEVEL >= 1:
                 thread = factory.get_thread(None, \
@@ -1638,7 +2002,7 @@ class frame_control(frame):
             else:
                 reread_documents_and_save_cache()
         elif action == "save_cache":
-            save_object(monolith, "cache")
+            save_object(monolith, "monolith")
         elif action == "shut_down_server":
             sys.exit(0)
     def process_submitted_appearance_changes(self):
@@ -1648,6 +2012,9 @@ class frame_control(frame):
           configuration.get_title()))
         configuration.set_welcome_page(get_cgi( \
           "control_appearance_welcome_page", configuration.get_welcome_page()))
+        configuration.set_welcome_snippet(get_cgi( \
+          "control_appearance_welcome_snippet", \
+          configuration.get_welcome_snippet()))
         configuration.set_page_header(get_cgi( \
           "control_appearance_page_header", configuration.get_page_header()))
         configuration.set_page_footer(get_cgi( \
@@ -1735,6 +2102,53 @@ class frame_control(frame):
                 os.remove(DOCUMENT_ROOT + "pickled/languages/" + file_to_delete)
             languages[language_to_save.get_html_name()] = language_to_save
     def process_submitted_miscellaneous_changes(self):
+        global thesaurus
+        try:
+            previous_value = configuration.should_enable_thesaurus()
+            new_value = \
+              int(get_cgi("control_miscellaneous_should_enable_thesaurus"))
+            if previous_value != new_value:
+                if new_value:
+                    if THREADING_LEVEL >= 1:
+                        thread = factory.get_thread(None, \
+                          reread_thesaurus_and_save_monolith, None, [], {})
+                        thread.start()
+                    else:
+                        reread_thesaurus_and_save_monolith()
+                else:
+                    configuration.set_enable_thesaurus(new_value)
+        except ValueError:
+            pass
+        try:
+            configuration.set_thesaurus_match_partial_words(int(get_cgi( \
+              "control_miscellaneous_should_thesaurus_match_partial_words", \
+              str(configuration.should_thesaurus_match_partial_words()))))
+        except ValueError:
+            pass
+        try:
+            configuration.set_textarea_height(int(get_cgi( \
+              "control_miscellaneous_textarea_height", \
+              str(configuration.get_textarea_height()))))
+        except ValueError:
+            pass
+        try:
+            configuration.set_userland_text_width(int(get_cgi( \
+              "control_miscellaneous_userland_text_width", \
+              str(configuration.get_userland_text_width()))))
+        except ValueError:
+            pass
+        try:
+            configuration.set_use_thesaurus_by_default(int(get_cgi( \
+              "control_miscellaneous_use_thesaurus_by_default", \
+              str(configuration.should_use_thesaurus_by_default()))))
+        except ValueError:
+            pass
+        try:
+            configuration.set_hide_configure_link(int(get_cgi( \
+              "control_miscellaneous_access_level", \
+              str(configuration.should_hide_configure_link()))))
+        except ValueError:
+            pass
         try:
             configuration.set_access_level(int(get_cgi( \
               "control_miscellaneous_access_level", \
@@ -1761,6 +2175,9 @@ class frame_control(frame):
               int(get_cgi("control_miscellaneous_cache_duration_seconds")))
         except ValueError:
             pass
+        configuration.set_default_format(get_cgi( \
+          "control_miscellaneous_default_format", \
+          configuration.get_default_format()))
         configuration.set_show_all_quotes_by_default(int(get_cgi( \
           "control_miscellaneous_should_show_all_quotes_by_default", \
           str(configuration.should_show_all_quotes_by_default()))))
@@ -1997,7 +2414,7 @@ class frame_master(frame):
           "border=\"0\">")
         for current_frame in sequence(displayable_frames):
             build_output("<frame src=\"" + \
-              factory.get_frame(current_frame).get_url() + query \
+              factory.get_frame(current_frame).get_url() + "&" + query \
               + "\" name=\"" + current_frame + "\">")
         build_output("</frameset>")
         build_output("<noframes>")
@@ -2102,12 +2519,13 @@ class frame_process_edit_entry(frame):
             cache.invalidate()
         if old_filename != "new_entry":
             keeper_section.deregister(old_filename)
+        keeper_section.set_timestamp("modified", filename)
         for section in sections.values():
             section.register(filename)
         if THREADING_LEVEL >= 1:
             request_save()
         elif configuration.should_save_cache():
-            save_object(monolith, "cache")
+            save_object(monolith, "monolith")
 
 class frame_search(frame):
     """The frame from which HTML searches are conducted."""
@@ -2137,10 +2555,11 @@ class frame_search(frame):
         build_output("// -->")
         build_output("</script>")
         build_output("<table border=\"0\" cellspacing=\"0\" cellpadding=\"" + \
-          str(configuration.get_cell_padding()) + "\">")
+          str(configuration.get_cell_padding()) + "\" width=\"100%\">")
         build_output("<tr><td>")
         build_output("<input type=\"text\" name=\"query\" value=\"" + \
-          get_cgi("query", "") + "\" size=\"" + \
+          string.replace(get_cgi("query"), "\"", "&quot;") + "\" size=\"" + \
+          #get_cgi("query", "") + "\" size=\"" + \
           str(configuration.get_text_size()) + "\">&nbsp; " + \
           "<input type=\"image\" name=\"submit\" value=\"submit\" " + \
           "alt=\"submit\" border=\"0\" align=\"center\" src=\"" + \
@@ -2181,7 +2600,7 @@ class frame_search(frame):
                   str(configuration.get_matches_per_page())) + "\">")
                 build_output("<input type=\"hidden\" " + \
                   "name=\"section_to_search\" value=\"" + \
-                  get_cgi("section_to_search", get_default_section()) + "\">")
+                  get_cgi("section_to_search", get_default_section("")) + "\">")
                 build_output("<input type=\"hidden\" " + \
                   "name=\"format_choice\" value=\"" + \
                   get_cgi("format_choice", \
@@ -2191,12 +2610,17 @@ class frame_search(frame):
                   get_cgi("show_all_quotes",
                   str(configuration.should_show_all_quotes_by_default())) + \
                   "\">")
+                build_output("<input type=\"hidden\" " + \
+                  "name=\"should_use_thesaurus\" value=\"" + \
+                  get_cgi("should_use_thesaurus",
+                  str(configuration.should_use_thesaurus_by_default())) + \
+                  "\">")
             else:
                 if configuration.should_allow_title_prefix_choice():
                     build_output("<input type=\"text\" name=\"title_prefix\" " + \
                       "value=\"" + get_cgi("title_prefix") + "\" size=\"" + \
                       str(configuration.get_text_size()) + "\"><br>")
-                    build_output("(Only show titles beginning with this)")
+                    build_output("(The above must be in the title.)")
                     build_output("</td></tr><tr><td>")
                 else:
                     build_output("<input type=\"hidden\" " + \
@@ -2204,8 +2628,27 @@ class frame_search(frame):
                       get_cgi("title_prefix") + "\">")
                 build_output("Look in: ")
                 build_output(get_section_choice(get_cgi("section_to_search", \
-                  get_default_section()), "section_to_search", None, 0, 0))
+                  get_default_section("")), "section_to_search", None, 0, 0))
                 build_output("</td></tr><tr><td>")
+                if configuration.should_enable_thesaurus():
+                    build_output("Include thesaurus matching (<em>slow</em>)? ")
+                    build_output("<select name=\"should_use_thesaurus\">")
+                    if get_cgi("should_use_thesaurus",
+                      str(configuration.should_use_thesaurus_by_default())) == \
+                      "1":
+                        build_output("<option value=\"1\" selected>Yes</option>")
+                        build_output("<option value=\"0\">No</option>")
+                    else:
+                        build_output("<option value=\"1\">Yes</option>")
+                        build_output("<option value=\"0\" selected>No</option>")
+                    build_output("</select>")
+                    build_output("</td></tr><tr><td>")
+                else:
+                    build_output("<input type=\"hidden\" " + \
+                      "name=\"should_use_thesaurus\" value=\"" + \
+                      get_cgi("should_use_thesaurus",
+                      str(configuration.should_use_thesaurus_by_default())) + \
+                      "\">")
                 if configuration.should_allow_format_choice():
                     build_output("Format: ")
                     build_output(get_format_choice())
@@ -2224,7 +2667,7 @@ class frame_search(frame):
                   "name=\"excerpt_radius\" value=\"" + \
                   get_cgi("excerpt_radius", \
                   str(configuration.get_excerpt_radius())) + "\">")
-                build_output("Results Per Page: " + \
+                build_output("Results per page: " + \
                   "<input type=\"text\" name=\"matches_per_page\" " + \
                   "size=\"5\" value=\"" + get_cgi("matches_per_page", \
                   str(configuration.get_matches_per_page())) + "\">")
@@ -2238,7 +2681,11 @@ class frame_search(frame):
                 build_output("</noscript>")
         build_output("</td></tr>")
         build_output("</table>")
-        build_output_for_appropriate_search_results()
+        if get_cgi("query") == "":
+            build_output(configuration.get_welcome_snippet())
+        if configuration.get_program_name() == "searchlog" or \
+          get_cgi("query") != "":
+            build_output_for_appropriate_search_results()
         build_output("<script language=\"JavaScript\">")
         build_output("<!--")
         build_output("function open_control_window()")
@@ -2260,14 +2707,18 @@ class frame_search(frame):
               " value=\"1\">")
         build_output("</form>")
         if not is_in_single_frame_mode():
-            build_output("<p align=\"center\"><a href=\"" + \
-              configuration.get_action_url() + "\" target=\"_top\" style=\"" + \
-              configuration.get_control_link_style() + \
-              "\">Start Over</a></p>")
-            build_output("<p align=\"center\"><a href=\"JavaScript:" + \
-              "open_control_window()\" style=\"" + \
-              configuration.get_control_link_style() + \
-              "\">Configure</a></p>")
+            if configuration.should_hide_configure_link():
+                build_output("<p align=\"center\"><a href=\"JavaScript:" + \
+                  "open_control_window()\" style=\"" + \
+                  configuration.get_control_link_style() + \
+                  "\"><img src=\"" + \
+                  configuration.convert_to_url("transparent.gif") + \
+                  "\" alt=\" \" border=\"0\"></a></p>")
+            else:
+                build_output("<p align=\"center\"><a href=\"JavaScript:" + \
+                  "open_control_window()\" style=\"" + \
+                  configuration.get_control_link_style() + \
+                  "\">Configure</a></p>")
             build_output("<noscript>")
             build_output("<p><strong>You will need to have JavaScript on, with " + \
               "popups enabled for this site, to control these pages' " + \
@@ -2285,13 +2736,14 @@ class frame_search_result(frame):
         frame.__init__(self)
     def convert_to_html(self, text, filename):
         result = text
-        if sections[get_cgi("section_to_search", \
-          get_default_section())].get_name() == "Main":
-            result = add_wiki_links(string.replace(result, \
-              configuration.get_entry_footer_marker(), \
-              configuration.get_entry_footer_link(filename)))
-        else:
-            result = add_wiki_links(result)
+        if get_default_section() != None:
+            if sections[get_cgi("section_to_search", \
+              get_default_section())].get_name() == "Main":
+                result = add_wiki_links(string.replace(result, \
+                  configuration.get_entry_footer_marker(), \
+                  configuration.get_entry_footer_link(filename)))
+            else:
+                result = add_wiki_links(result)
         return result
     def display(self):
         nothing_displayed = 0
@@ -2311,6 +2763,7 @@ class frame_search_result(frame):
                 filename = get_cgi("relative_filename")
             displayable_document = section.get_document(filename)
             if displayable_document != None:
+                section.set_timestamp("read", filename)
                 document_text = displayable_document.get_displayable_result()
                 build_output(self.convert_to_html(document_text, filename))
             else:
@@ -2324,13 +2777,60 @@ class frame_search_result(frame):
             header = string.replace(header, "@BODY_TAG@", \
               configuration.get_body_tag())
             build_output(header)
-            build_output("<br>")
+            build_output("<form action=\"" + configuration.get_action_url() + \
+              "\" name=\"" + configuration.get_program_name() + \
+              "\" method=\"" + configuration.get_action_method() + "\">")
+            build_output("<input type=\"hidden\" name=\"page_mode\" " + \
+              "value=\"search_result\">")
+            build_output("<input type=\"hidden\" name=\"should_display_index\" " + \
+              "value=\"1\">")
+            if configuration.get_program_name() != "searchlog":
+                build_output("<br>")
+                build_output("<table width=\"100%\" border=\"0\" " + \
+                  "cellpadding=\"3\" cellspacing=\"0\">")
+                build_output("<tr><td align=\"center\">")
+                build_output("View home page for:")
+                build_output("</td></tr><tr><td align=\"center\">")
+                build_output(get_section_choice(None, "file_section", \
+                  None, 0, 1))
+                build_output("<input type=\"image\" name=\"submit\" value=\"submit\" " + \
+                  "alt=\"submit\" border=\"0\" align=\"center\" src=\"" + \
+                  configuration.convert_to_url("submit.gif") + "\"></p>")
+                build_output("</td></tr></table>")
+                build_output("<br>")
+            build_output("</form>")
             build_output(configuration.get_welcome_page())
-            build_output("<p align=\"center\"><a style=\"" + \
-              configuration.get_control_link_style() + "\" href=\"" + \
-              factory.get_frame_edit_entry().get_url() + "&access=" + \
-              urllib.quote(get_cgi("access")) + \
-              "&entry_identifier=new_entry\">Add Entry</a></p>\n")
+            if configuration.get_program_name() == "searchlog":
+                build_output("<p align=\"center\"><a style=\"" + \
+                  configuration.get_control_link_style() + "\" href=\"" + \
+                  factory.get_frame_edit_entry().get_url() + "&access=" + \
+                  urllib.quote(get_cgi("access")) + \
+                  "&entry_identifier=new_entry\">Add Entry</a></p>\n")
+            build_output("<script language=\"JavaScript\">")
+            build_output("<!--")
+            build_output("function open_control_window()")
+            build_output("    {")
+            build_output("    open_window=window.open('" + \
+              configuration.get_action_url() + \
+              "?page_mode=administrative_control'," + \
+              "'control','toolbar=no,location=no,directories=no,status=no," + \
+              "menubar=no,scrollbars=yes,width=" + \
+              str(configuration.get_control_popup_width()) + ",height=" + \
+              str(configuration.get_control_popup_height()) + \
+              ",top=100,left=100')")
+            build_output("    }")
+            build_output("// -->")
+            build_output("</script>")
+            #build_output("<p align=\"center\"><a href=\"JavaScript:" + \
+              #"open_control_window()\" style=\"" + \
+              #configuration.get_control_link_style() + \
+              #"\">Configure</a></p>")
+            build_output("<noscript>")
+            build_output("<p><strong>You will need to have JavaScript on, " + \
+              "with " + \
+              "popups enabled for this site, to control these pages' " + \
+              "behavior.</strong></p>")
+            build_output("<noscript>")
             build_output(configuration.get_page_footer())
     def get_access_level(self):
         return READ_ONLY_ACCESS
@@ -2351,12 +2851,31 @@ class frame_wiki_link(frame):
           get_default_section())]
         title = get_cgi("title")
         title = re.sub("<.*?>", "", title)
-        matches = []
+        documents = []
         for document in section_to_search.get_documents():
             if document.get_title() == title \
               and section_to_search.truename(document.get_relative_filename()) \
               == document.get_relative_filename():
-                matches.append(document.get_relative_filename())
+                documents.append(document)
+        if len(documents) >= 1:
+            to_remove = []
+            index = 0
+            for outer in documents:
+                for inner in documents[index + 1:]:
+                    if inner.get_field("PermanentID") == \
+                      outer.get_field("PermanentID"):
+                        if int(inner.get_field("Version")) > \
+                          int(outer.get_field("Version")):
+                            to_remove.append(outer)
+                        else:
+                            to_remove.append(inner)
+                index += 1
+            for entry in to_remove:
+                if entry in documents:
+                    documents.remove(entry)
+        matches = []
+        for document in documents:
+            matches.append(document.get_relative_filename())
         if len(matches) > 1:
             self.provide_choice(section_to_search, matches)
         elif len(matches) == 1:
@@ -2437,11 +2956,10 @@ class histogram(ancestor):
     def finalize(self):
         occurrences_as_list = []
         for word in sequence(self.occurrences):
-            occurrences_as_list.append((word_numberer.get_number(word), \
-              self.occurrences[word]))
+            occurrences_as_list.append((word, self.occurrences[word]))
         sort_by_item(occurrences_as_list, 0)
         self.finalized_data = tuple(occurrences_as_list)
-        self.occurrences = None
+        #self.occurrences = None
     def get_occurrences(self, category):
         if self.occurrences == None:
             result = binary_search(self.finalized_data, category, (0,0))[1]
@@ -2457,16 +2975,20 @@ class histogram(ancestor):
               float(self.total_occurrences)
         else:
             return 0
-    def get_score(self, other_histogram):
+    def get_score(self, other_histogram, thesaurus = None):
         if self.total_occurrences == 0 or \
           other_histogram.total_occurrences == 0:
             return 0
         else:
             numerator = 0
-            for pair in sequence(self.finalized_data):
-                key = pair[0]
-                numerator += self.get_occurrences(key) * \
-                  other_histogram.get_occurrences(key)
+            for key in sequence(self.occurrences):
+                if thesaurus == None:
+                    numerator += self.get_occurrences(key) * \
+                      other_histogram.get_occurrences(key)
+                else:
+                    if thesaurus.contains(key):
+                        numerator += self.get_occurrences(key) * \
+                          other_histogram.get_occurrences(key)
             denominator = self.total_occurrences * \
               other_histogram.total_occurrences
             return float(numerator) / float(denominator)
@@ -2615,6 +3137,7 @@ class monolith_class(ancestor):
         self.cache = cache
         self.sections = sections
         self.subsections = subsections
+        self.thesaurus = thesaurus
         self.word_numberer = word_numberer
 
 class multitasking_manager(ancestor):
@@ -2695,7 +3218,10 @@ class multitasking_manager(ancestor):
                     dummy_thread_identifier = time.time()
                     self.handle_oracle_query(newsocket, address)
             else:
-                try:
+                # We don't catch exceptions if we are in multithreaded mode and
+                # debugging is on because we want to see the errors.
+                if THREADING_LEVEL > 0 and configuration.get_debug_level() \
+                  > 0:
                     newsocket, address = sock.accept()
                     if THREADING_LEVEL >= 2:
                         thread = factory.get_thread(None, \
@@ -2705,12 +3231,25 @@ class multitasking_manager(ancestor):
                     else:
                         dummy_thread_identifier = time.time()
                         self.handle_oracle_query(newsocket, address)
-                except:
-                    sock.close()
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    sock.bind(("", configuration.get_search_server_port()))
-                    sock.listen(5)
+                else:
+                    try:
+                        newsocket, address = sock.accept()
+                        if THREADING_LEVEL >= 2:
+                            thread = factory.get_thread(None, \
+                              self.handle_oracle_query, \
+                              None, (newsocket, address), {})
+                            thread.start()
+                        else:
+                            dummy_thread_identifier = time.time()
+                            self.handle_oracle_query(newsocket, address)
+                    except:
+                        sock.close()
+                        sock = socket.socket(socket.AF_INET, \
+                          socket.SOCK_STREAM)
+                        sock.setsockopt(socket.SOL_SOCKET,  \
+                          socket.SO_REUSEADDR, 1)
+                        sock.bind(("", configuration.get_search_server_port()))
+                        sock.listen(5)
     def start_oracle(self):
         try:
             first_pid = os.fork()
@@ -2739,27 +3278,22 @@ class multitasking_manager(ancestor):
 class query(ancestor):
     """An and-based query."""
     def __init__(self, query_string = "", search_criteria = None):
+        ancestor.__init__(self)
         self.set_query_string(query_string)
         if search_criteria == None:
             self.search_criteria = factory.get_search_criteria()
         else:
             self.search_criteria = search_criteria
         self.boolean_parser = factory.get_boolean_parser(self.score_internal,
-          query_string)
+          get_cgi("query"))
         self.words = self.boolean_parser.get_words()
     def accepts(self, document_for_file, query_string):
-        # A query string of pure whitespace matches everything.
-        if re.match("\A" + get_cgi("title_prefix"), \
-          document_for_file.get_title(), re.I):
-            if re.match("\S+", query_string):
-                if self.score(document_for_file, query_string) > 0:
-                    return 1
-                else:
-                    return 0
-            else:
-                return 1
+        if self.score(document_for_file, query_string) > 0:
+            return 1
         else:
             return 0
+    def get_boolean_parser(self):
+        return self.boolean_parser
     def get_color(self, distance, first_triplet, second_triplet):
         red = first_triplet[0] + distance * (second_triplet[0] - \
           first_triplet[0])
@@ -2866,6 +3400,15 @@ class query(ancestor):
             return "<span style=\"" + style + "\">" + word + "</span>"
         else:
             return word
+    def get_thesaurus_matches(self):
+        result = []
+        for word in self.words:
+            for neighbor in thesaurus.get_neighbors(word):
+                if not neighbor in result:
+                    result.append(neighbor)
+            if not word in result:
+                result.append(word)
+        return result
     def get_words(self):
         return self.words
     def is_approximate_match(self, language_identifier, word):
@@ -2876,27 +3419,25 @@ class query(ancestor):
           configuration.get_approximate_match_threshold()
     def score(self, document_for_file, query_string):
         return self.boolean_parser.get_score(document_for_file)
+    # alias boolean_parser.get_word_score()
     def score_internal(self, document_for_file, query_word):
         proportions = {}
         total_score = 1
         language_identifier = document_for_file.get_language_identifier()
-        if self.search_criteria[0]:
+        if configuration.should_enable_thesaurus() and self.search_criteria[0]:
             proportions[query_word] = 0
             for document_word in sequence(document_for_file.get_words()):
-                if string.find(document_word, query_word) != -1:
-                    proportions[query_word] += \
-                      document_for_file.get_proportion(document_word) * \
-                      self.get_score_for_word(language_identifier, document_word, \
-                      query_word)
-            document_for_file.get_proportion(query_word)
+                proportions[query_word] += \
+                  document_for_file.get_proportion(document_word) * \
+                  thesaurus.get_score(document_word, query_word)
         else:
             proportions[query_word] = \
               document_for_file.get_proportion(query_word)
-        total_score *= proportions[query_word] 
-        if total_score > 0:
+        total_score *= proportions[query_word]
+        if total_score > 0.0:
             return total_score
         else:
-            return 0
+            return 0.0
     def set_query_string(self, query_string):
         self.query_string = query_string
         self.words = []
@@ -2922,19 +3463,25 @@ class search(ancestor):
         self.sections_of_documents = sections_of_documents
     def search(self):
         """Perform a search. Returns a tuple of (section, file, score)."""
-        selected_section = self.criteria[1]
+        ###
+        selected_section = self.criteria[2]
         if selected_section in sequence(sections):
             restricted_section = sections[selected_section]
         elif selected_section in sequence(subsections):
             restricted_section = subsections[selected_section]
         else:
-            restricted_section = sections[get_default_section()]
+            if configuration.get_program_name() == "searchlog":
+                restricted_section = sections[get_default_section()]
+            else:
+                restricted_section = None
         scored_results = []
         if restricted_section != None:
             sections_to_search = [restricted_section]
         else:
             sections_to_search = self.sections_of_documents
         for current_section in sequence(sections_to_search):
+            #query = factory.get_query(get_cgi("query"))
+            query_string = get_cgi("query")
             for filename in \
               current_section.get_documents_by_filename().keys():
                 document = current_section.get_document(filename)
@@ -2943,16 +3490,33 @@ class search(ancestor):
                     should_include_document = \
                       restricted_section.accepts(current_section.get_root(), \
                       document.get_relative_filename())
+                if should_include_document:
+                    if get_cgi("title_prefix") != "":
+                        title = string.lower(document.get_title())
+                        for token in tokenize(get_cgi("title_prefix")):
+                            if not token in title:
+                                should_include_document = 0
+                query = get_cgi("query")
                 if should_include_document and self.query.accepts(document, \
-                  get_cgi("query")):
+                  query):
                     try:
                         if get_sort_method() == "timestamp":
                             scored_results.append((current_section, \
                               document, document.get_timestamp()))
-                        elif get_sort_method() == "relevance":
+                        elif get_sort_method() == "viewing_timestamp":
                             scored_results.append((current_section, \
+                              document, current_section.get_time_sort_key( \
+                              document.get_relative_filename())))
+                        elif get_sort_method() == "relevance":
+                            scored_results.append((current_section, document, \
                               document, self.query.score(document, \
-                              self.query)))
+                              query_string)))
+                              ### Changed to submit a string rather than a
+                              # query object.
+                        #elif get_sort_method() == "relevance":
+                            #scored_results.append((current_section, \
+                              #document, self.query.score(document, \
+                              #self.query)))
                         elif get_sort_method() == "alpabetized":
                             scored_results.append((current_section, \
                               document, document.get_title()))
@@ -2961,7 +3525,6 @@ class search(ancestor):
                               document, 0.0))
                     except IOError:
                         current_section.delete(document)
-
         return self.sort_results(scored_results)
     def set_sections_of_files(self, sections_of_files):
         self.sections_of_files = sections_of_files
@@ -3007,12 +3570,16 @@ class search_more_like_this(search):
     def accepts(self, document, criteria):
         return 1
     def score(self, other_document):
-        return self.document.get_histogram().get_score( \
-          other_document.get_histogram())
+        if factory.get_search_criteria()[0]:
+            return self.document.get_histogram().get_score( \
+              other_document.get_histogram(), thesaurus)
+        else:
+            return self.document.get_histogram().get_score( \
+              other_document.get_histogram())
     def search(self):
         """Perform a search. Returns a tuple of (section, file, score)."""
         scored_results = []
-        selected_section = self.criteria[1]
+        selected_section = self.criteria[2]
         if selected_section in sequence(sections):
             restricted_section = sections[selected_section]
         elif selected_section in sequence(subsections):
@@ -3107,6 +3674,15 @@ class section(ancestor):
                 del self.documents_by_filename[filename]
         except:
             pass
+    def get_timestamp(self, field, filename):
+        if not hasattr(self, "access_times"):
+            self.access_times = {}
+        if not self.access_times.has_key(field):
+            self.access_times[field] = {}
+        if self.access_times[field].has_key(filename):
+            return self.access_times[field][filename]
+        else:
+            return 0
     def get_default_name(self):
         return self.default_name
     def get_document(self, filename):
@@ -3165,6 +3741,21 @@ class section(ancestor):
         return self.text_patterns_to_deny
     def get_text_subsections(self):
         return self.text_subsections
+    def get_time_sort_key(self, filename):
+        if self.get_timestamp("read", filename) > 0:
+            return self.get_timestamp("read", filename)
+        elif self.get_timestamp("click", filename) > 0:
+            return self.get_timestamp("click", filename)
+            #return max(self.get_timestamp("click", filename), \
+              #self.get_document(filename).get_timestamp())
+        #elif self.get_timestamp("summary", filename) > 0:
+            #return self.get_timestamp("summary", filename)
+            #return max(self.get_timestamp("summary", filename), \
+              #self.get_document(filename).get_timestamp()) / 2
+        elif self.get_timestamp("modified", filename) > 0:
+            return self.get_timestamp("modified", filename)
+        else:
+            return self.get_document(filename).get_timestamp()
     def get_title(self):
         pass
     def get_url_prefix(self):
@@ -3244,6 +3835,12 @@ class section(ancestor):
             if text_pattern != "":
                 self.compiled_patterns_to_deny.append(\
                   re.compile(".*" + text_pattern + ".*"))
+    def set_timestamp(self, field, filename):
+        if not hasattr(self, "access_times"):
+            self.access_times = {}
+        if not self.access_times.has_key(field):
+            self.access_times[field] = {}
+        self.access_times[field][filename] = time.time()
     def set_title(self, title):
         self.title = title
     def set_url_prefix(self, url_prefix):
@@ -3315,6 +3912,71 @@ class subsection(section):
     def set_parent(self, parent):
         self.parent = parent
 
+class thesaurus_class(ancestor):
+    def __init__(self, filename = "thesaurus"):
+        ancestor.__init__(self)
+        self.words = {}
+        try:
+            self.load("thesaurus.private")
+        except IOError:
+            if filename != None:
+                self.load(filename)
+            try:
+                self.load(filename + ".aux")
+            except IOError:
+                pass
+    def contains(self, word):
+        if word in sequence(self.words):
+            return 1
+        else:
+            return 0
+    def get_neighbors(self, word):
+        if word in sequence(self.words):
+            return list(self.words[word])
+        else:
+            return []
+    def get_score(self, first_word, second_word):
+        if first_word == second_word:
+            score = 1.0
+        elif first_word in self.words and second_word in \
+          self.words[first_word]:
+            score = 1.0 - (1.0 / (1 + self.words[first_word][second_word]))
+        else:
+            score = 0.0
+        return score
+    def load(self, filename = "thesaurus"):
+        thesaurus = read_file(filename)
+        thesaurus = string.replace(thesaurus, "\r", "")
+        for line in string.split(thesaurus, "\n"):
+            line_as_list = re.split(",", line)
+            if configuration.should_thesaurus_match_partial_words():
+                new_line_as_list = []
+                for word in line_as_list:
+                    new_line_as_list += word_numberer.get_matching_words(".*" \
+                      + word + ".*")
+                line_as_list = new_line_as_list
+            for first_word_index in range(len(line_as_list)):
+                if self.should_register_word(line_as_list[first_word_index]):
+                    for second_word_index in range(first_word_index + 1, \
+                      len(line_as_list)):
+                        self.register_neighbors( \
+                          line_as_list[first_word_index], \
+                          line_as_list[second_word_index])
+    def register_neighbors(self, first_word, second_word):
+        self.register_neighbors_internal(string.lower(first_word), \
+          string.lower(second_word))
+        self.register_neighbors_internal(string.lower(second_word),
+          string.lower(first_word))
+    def register_neighbors_internal(self, first_word, second_word):
+        if not first_word in self.words:
+            self.words[first_word] = {}
+        if not second_word in self.words[first_word]:
+            self.words[first_word][second_word] = 1
+        else:
+            self.words[first_word][second_word] += 1
+    def should_register_word(self, word):
+        return re.match("\A\w+\Z", word)
+
 class user_configuration_class(ancestor):
     def __init__(self):
         ancestor.__init__(self)
@@ -3343,7 +4005,7 @@ class webpage(document):
         result = []
         if not hasattr(self, "title"):
             self.compute_title()
-        result += self.tokenize(self.title)
+        result += tokenize(self.title)
         result += self.get_body_tokens()
         return result
     def get_body_tokens(self):
@@ -3351,9 +4013,9 @@ class webpage(document):
         for tag in ["title", "script", "style"]:
             working_text = re.sub("<" + tag + r"\b.*?</" + tag + ">", " ", \
               str(working_text))
-        result = self.tokenize(working_text)
+        result = tokenize(working_text)
         return result
-    def get_displayable_result(self, text=None):
+    def get_displayable_result(self, text = None):
         score_index = {}
         if text == None:
             interim = self.get_file_contents()
@@ -3361,7 +4023,20 @@ class webpage(document):
             interim = text
         newline_placeholder = "@@NEWLINE_PLACEHOLDER_45434343929432@@"
         interim = re.sub("\n", newline_placeholder, interim)
-        query_words = factory.get_query(get_cgi("query")).get_words()
+        query = factory.get_query(get_cgi("query"))
+        scorer = query.get_boolean_parser()
+        #if configuration.should_enable_thesaurus() and \
+          #int(get_cgi("should_use_thesaurus", \
+          #configuration.should_use_thesaurus_by_default())):
+        if configuration.should_enable_thesaurus() and \
+          factory.get_search_criteria()[0]:
+            highlighted_words = \
+              sort_by_descending_length(query.get_thesaurus_matches())
+            query_words = sort_by_descending_length(highlighted_words)
+        else:
+            highlighted_words = sort_by_descending_length(query.get_words())
+            query_words = sort_by_descending_length(highlighted_words)
+        #word_characters = r"\w&#;"
         word_characters = r"\w"
         word_character_matcher = re.compile("[" + word_characters + "]")
         beginning_word_character = re.compile("^[" + word_characters + "]")
@@ -3374,23 +4049,26 @@ class webpage(document):
         approximate_match_style = \
           configuration.get_approximate_match_style("#000000", 0)
         exact_match_style = configuration.get_exact_match_style("#000000", 0)
-        while "" in sequence(query_words):
-            query_words.remove("")
-        insensitive_query_words = []
-        for word in sequence(query_words):
-            insensitive_query_words.append(self.insensitize(word))
-        query_pattern = re.compile("(" + "|".join(insensitive_query_words) + \
-          ")")
+        while "" in sequence(highlighted_words):
+            highlighted_words.remove("")
+        insensitive_highlighted_words = []
+        for word in sequence(highlighted_words):
+            insensitive_highlighted_words.append(self.insensitize(word))
+        query_pattern = re.compile("(" + \
+          "|".join(insensitive_highlighted_words) + ")")
+        #split_document = re.split(query_pattern, interim)
         split_document = []
         split_segments = tag_or_comment_splitter.split(interim)
-        should_match_partial_words = factory.get_search_criteria()[0]
+        #should_match_partial_words = factory.get_search_criteria()[1]
+        should_match_partial_words = 0
         for segment in sequence(split_segments):
             if tag_matcher.match(segment):
                 split_document.append(segment)
             else:
                 inner_segments = query_pattern.split(segment)
                 for index in range(len(inner_segments)):
-                    if string.lower(inner_segments[index]) in sequence(query_words):
+                    if string.lower(inner_segments[index]) in \
+                      sequence(highlighted_words):
                         if index > 0:
                             previous = inner_segments[index - 1]
                         else:
@@ -3399,38 +4077,62 @@ class webpage(document):
                             next = inner_segments[index + 1]
                         else:
                             next = ""
-                        if beginning_word_character.match(next) or \
-                          ending_word_character.match(previous):
-                            word_score = approximate_match_score
+                        word_score = scorer.get_individual_word_score( \
+                          inner_segments[index])
+                        if word_score < \
+                          configuration.get_exact_match_threshold():
+                        #if beginning_word_character.match(next) or \
+                          #ending_word_character.match(previous):
+                            #word_score = approximate_match_score
                             if should_match_partial_words:
                                 style = approximate_match_style
                             else:
-                                style = "font-color: red"
+                                #style = "color: red"
+                                style = "font-weight: bold"
                         else:
-                            word_score = exact_match_score
+                            #word_score = exact_match_score
                             style = exact_match_style
-                        if not(index > 0 and index < len(inner_segments) - 1 and \
-                          len(inner_segments[index - 1]) \
+                        if not(index > 0 and len(inner_segments[index - 1]) \
                           > 0 and word_character_matcher.match( \
                           inner_segments[index - 1][-1])) and \
-                          not(index < len(inner_segments) - 2 and\
+                          not(index < len(inner_segments) - 2 and \
+                          len(inner_segments[index + 1]) > 0 and \
                           word_character_matcher.match(\
                           inner_segments[index + 1][0])):
                             identifier = "score" + str(word_score) + \
                               "_number" + str(get_score_index(word_score, \
                               score_index))
+                        #if index > 0 and len(inner_segments[index - 1]) > 0 \
+                          #and word_character_matcher.match( \
+                          #inner_segments[index - 1][-1]):
+                            #pass
+                            #inner_segments[index - 1] = re.sub("([" + \
+                              #word_characters + "]*)$", \
+                              #"<span id=\"" + identifier + \
+                              #"\" style=\"" + style + "\">" + r"\1", \
+                              #inner_segments[index - 1])
+                        #else:
                             inner_segments[index] = "<span id=\"" + \
                               identifier + "\" style=\"" + style + \
                               "\">" + inner_segments[index]
+                        #if index < len(inner_segments) - 2 and\
+                          #word_character_matcher.match(\
+                          #inner_segments[index + 1][0]):
+                            #pass
+                            #inner_segments[index + 1] = re.sub("^([" \
+                              #+ word_characters + "]*)", \
+                              #r"\1</span>", inner_segments[index + 1])
+                        #else:
                             inner_segments[index] = \
-                              inner_segments[index] + "</span>"
+                            inner_segments[index] + "</span>"
                 split_document += inner_segments
         interim = "".join(split_document)
-        for pair in [("img", "src", "canonicalize"), \
+        for pair in [("a", "href", "wrap"), \
+          ("img", "src", "canonicalize"), \
           ("body", "background", "canonicalize"), \
           ("link", "href", "canonicalize"), \
           ("applet", "code", "canonicalize"), \
-          ("a", "target", "override: " + configuration.get_default_target())]:
+          ("a", "target", "override: _self")]:
             interim = "".join(split_document)
             pieces = []
             tag_name = self.insensitize(pair[0])
@@ -3459,17 +4161,17 @@ class webpage(document):
                             pieces.append(condense_path(\
                               self.section.get_url_prefix() + \
                               relative_directory + url))
-                        elif what_to_do[0:10] == "override: ":
-                            pieces.append(what_to_do[10:])
+                        elif what_to_do == "override: _self":
+                            pieces.append("_self")
                 else:
                     pieces.append(piece)
             split_document = pieces
         interim = split_document
         return re.sub(newline_placeholder, "\n", "".join(interim))
     def get_approximate_match_score(self):
-        return 0.5
+        return configuration.get_approximate_match_score()
     def get_exact_match_score(self):
-        return 1.0
+        return configuration.get_exact_match_score()
     def insensitize(self, word):
         result = []
         for index in range(len(word)):
@@ -3480,11 +4182,6 @@ class webpage(document):
         return "".join(result)
     def compute_title(self):
         self.title = self.get_tag_contents("title", self.get_file_contents())
-    def tokenize(self, text):
-        working_text = str(text)
-        working_text = re.sub("\n", " ", working_text)
-        working_text = re.sub("<.*?>", " ", working_text)
-        return self.tokenize_internal(working_text)
 
 class word_numberer_class(ancestor):
     def __init__(self):
@@ -3498,13 +4195,13 @@ class word_numberer_class(ancestor):
             if compiled.match(word):
                 result.append(word)
         return result
-    def get_number(self, word):
-        if word in sequence(self.words):
-            return self.words[word]
-        else:
-            self.highest_index += 1
-            self.words[word] = self.highest_index
-            return self.highest_index
+    #def get_number(self, word):
+        #if word in sequence(self.words):
+            #return self.words[word]
+        #else:
+            #self.highest_index += 1
+            #self.words[word] = self.highest_index
+            #return self.highest_index
 
 def add_wiki_links(text, external_section = None, target = "_self"):
     if external_section == None:
@@ -3614,7 +4311,7 @@ def build_output_for_appropriate_search_results():
           get_cgi("relative_filename") + "\">")
     else:
         search_results = cache.get_search_results(get_cgi("query", ""), \
-          criteria)
+          get_cgi("title_prefix"), criteria)
     build_output("<input type=\"hidden\" name=\"display_only_section\" " +\
       "value=\"" + get_cgi("display_only_section", "undefined") + "\">")
     build_output("<input type=\"hidden\" name=\"display_only_filename\" " +\
@@ -3649,11 +4346,19 @@ def build_output_for_appropriate_search_results():
         build_output_for_navigation(search_results)
         if len(search_results) == 0:
             if get_cgi("query") != "":
-                build_output("<p>Your search, \"" + get_cgi("query") +
-                  "\", did not match any documents.</p>")
+                build_output("<p>Your search, <em>" + get_cgi("query") +
+                  "</em>, did not match any documents.</p>")
                 build_output( "<p>You might try a less specific search.</p>")
         else:
-            build_output("<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\">")
+            if configuration.get_program_name() == "searchlog":
+                build_output( \
+                  "<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\">")
+            else:
+                build_output( \
+                  "<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" align=\"center\">")
+            if type(search_results) == type([]) and len(search_results) == 1:
+                search_results[0][0].set_timestamp("read", \
+                  search_results[0][1].get_relative_filename())
             for result in sequence(search_results):
                 if result[0].get_html_name() == \
                   get_cgi("display_only_section", \
@@ -3666,12 +4371,21 @@ def build_output_for_appropriate_search_results():
         build_output_for_navigation(search_results)
         if len(search_results) == 0:
             if get_cgi("query") != "":
-                build_output("<p>Your search, \"" + get_cgi("query") +
-                  "\", did not match any documents.</p>")
+                build_output("<p>Your search, <em>" + get_cgi("query") +
+                  "</em>, did not match any documents.</p>")
                 build_output( "<p>You might try a less specific search.</p>")
         else:
+            #if type(search_results) == type([]) and len(search_results) == 1:
+            if type(search_results) == type([]) and len(search_results) >= 1:
+                search_results[0][0].set_timestamp("read", \
+                  search_results[0][1].get_relative_filename())
             starting_point = int(get_cgi("place_in_search", "0"))
-            build_output("<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\">")
+            if configuration.get_program_name() == "searchlog":
+                build_output( \
+                  "<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\">")
+            else:
+                build_output( \
+                  "<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" align=\"center\">")
             if get_sort_method() == "alpabetized":
                 for current_result in search_results:
                     build_output_for_search_result(current_result, query)
@@ -3732,15 +4446,24 @@ def build_output_for_search_result(search_tuple, query):
     score = search_tuple[2]
     criteria = factory.get_search_criteria()
     try:
-        (excerpts, length) = cache.get_excerpts(document, get_cgi("query", \
+        returned_excerpts = cache.get_excerpts(document, get_cgi("query", \
           ""), criteria)
+        (excerpts, indicator, length) = returned_excerpts
     except ValueError:
         return
-    build_output("<tr><td colspan=\"2\"><a href=\"" + \
-      get_wrapped_url(section, \
-      document.get_relative_filename()) + \
-      "\" style=\"" + configuration.get_result_link_style() + \
-      "\"", "-nonewline")
+    section.set_timestamp("summary", document.get_relative_filename())
+    if configuration.get_program_name() == "searchlog":
+        build_output("<tr><td colspan=\"2\"><a href=\"" + \
+          get_wrapped_url(section, \
+          document.get_relative_filename()) + \
+          "\" style=\"" + configuration.get_result_link_style() + \
+          "\"", "-nonewline")
+    else:
+        build_output("<tr><td colspan=\"2\" align=\"center\"><a href=\"" + \
+          get_wrapped_url(section, \
+          document.get_relative_filename()) + \
+          "\" style=\"" + configuration.get_result_link_style() + \
+          "\"", "-nonewline")
     if is_in_single_frame_mode():
         build_output(">", "-nonewline")
     else:
@@ -3749,27 +4472,38 @@ def build_output_for_search_result(search_tuple, query):
     if get_sort_method() == "alpabetized":
         return
     if get_cgi("should_display_only_document", "0") == 1:
-        criteria[2] = 1
-    build_output(excerpts)
+        criteria[4] = 1
     line_break_written = 0
     if not line_break_written:
-        build_output("<tr><td colspan=\"2\">")
+        if configuration.get_program_name() == "searchlog":
+            build_output("<tr><td colspan=\"2\">")
+        else:
+            build_output("<tr><td colspan=\"2\" align=\"center\">")
         line_break_written = 1
-    if not line_break_written:
-        build_output("<tr><td colspan=\"2\">")
-        line_break_written = 1
-    build_output("<a href=\"" + \
-      get_wrapped_url(section, \
-      document.get_relative_filename()) + \
-      "\" style=\"" + configuration.get_control_link_style() + \
-      "\" target=\"search_result\">Read More</a>&nbsp;&nbsp; ", \
-      "-nonewline")
-    build_output("<a style=\"" + \
-      configuration.get_control_link_style() + "\" href=\"" + \
-      factory.get_frame_edit_entry().get_url() + \
-      "&entry_identifier=" + document.get_relative_filename() + \
-      "&access=" + urllib.quote(get_cgi("access")) + \
-      "\" target=\"search_result\">Edit Entry</a>&nbsp;&nbsp;\n")
+    build_output(excerpts)
+    #build_output("</td></tr><tr><td colspan=\"2\" align=\"center\">")
+    build_output("</td></tr><tr><td colspan=\"2\">")
+    if configuration.get_program_name() == "searchlog":
+        build_output("<a href=\"" + \
+          get_wrapped_url(section, \
+          document.get_relative_filename()) + \
+          "\" style=\"" + configuration.get_control_link_style() + \
+          "\" target=\"search_result\">Read More</a>&nbsp;&nbsp; ", \
+          "-nonewline")
+        build_output("<a style=\"" + \
+          configuration.get_control_link_style() + "\" href=\"" + \
+          factory.get_frame_edit_entry().get_url() + \
+          "&entry_identifier=" + document.get_relative_filename() + \
+          "&access=" + urllib.quote(get_cgi("access")) + \
+          "\" target=\"search_result\">Edit Entry</a>&nbsp;&nbsp;\n")
+    else:
+        if not is_in_single_frame_mode():
+            build_output("<a href=\"" + \
+              get_wrapped_url(search_tuple[0], \
+              search_tuple[1].get_relative_filename()) + \
+              "\" style=\"" + configuration.get_control_link_style() + \
+              "\" target=\"_top\">Fill Window</a>&nbsp;&nbsp; ", \
+              "-nonewline")
     if configuration.should_display_more_like_this():
         if not line_break_written:
             build_output("<tr><td colspan=\"2\">")
@@ -3782,6 +4516,10 @@ def build_output_for_search_result(search_tuple, query):
           "&more_like_this=yes\" style=\"" + \
           configuration.get_control_link_style() + \
           "\">More Like This</a>&nbsp;&nbsp;")
+    if get_cgi("should_display_only_document", "0") == "1":
+        build_output("<a href=\"JavaScript:display_full_documents()\" " + \
+          "style=\"" + configuration.get_control_link_style() + "\">" + \
+          "Return to Search</a>&nbsp;&nbsp;")
     if configuration.get_maximum_quotes() != -1 and length > \
       configuration.get_maximum_quotes():
         if not line_break_written:
@@ -3793,13 +4531,20 @@ def build_output_for_search_result(search_tuple, query):
               "Return to Search</a>&nbsp;&nbsp;")
         elif get_cgi("show_all_quotes", \
           str(configuration.should_show_all_quotes_by_default())) == "0":
+            #build_output("<a href=\"JavaScript:display_only_document('" + \
+              #section.get_html_name() + "','" + \
+              #document.get_relative_filename() + "')\" style=\"" + \
+              #configuration.get_control_link_style() + "\">Show All " + \
+              #str(length) + " Occurrences</a> &nbsp;&nbsp;")
             build_output("<a href=\"JavaScript:display_only_document('" + \
               section.get_html_name() + "','" + \
               document.get_relative_filename() + "')\" style=\"" + \
               configuration.get_control_link_style() + "\">Show All " + \
-              str(length) + " Occurrences</a> &nbsp;&nbsp;")
-    build_output(time.ctime(document.get_timestamp()) + ", r" + \
-      document.get_field("Version"))
+              "Occurrences</a> &nbsp;&nbsp;")
+    ## Incorporate OS timestamp into document.get_timestamp()
+    if configuration.get_program_name() == "searchlog":
+        build_output(time.ctime(document.get_timestamp()) + ", r" + \
+          document.get_field("Version"))
     if line_break_written:
         build_output("</td></tr>")
     build_output("<tr><td colspan=\"2\">&nbsp;</td></tr>")
@@ -4146,21 +4891,23 @@ def get_cutoff_tags():
       "<UL", \
       ]
 
-def get_default_section():
+def get_default_section(default = None):
     for section in sections.values():
         if section.get_name() == "Main":
             return section.get_html_name()
+    return default
 
 def get_format_choice(value_selected=None, html_name="format_choice"):
     result = []
     result.append("<select name=\"" + html_name + "\">")
     for current in [["alpabetized", "Alphabetized List"], \
-      ["timestamp", "Date"], \
+      ["timestamp", "Date Last Modified"], \
+      ["viewing_timestamp", "Date Last Viewed"], \
       ["mixed", "Relevance"]]:
       #["mixed", "Mixed"], \
       #["relevance", "Relevance"]]:
         result.append("<option value=\"" + current[0] + "\"")
-        if get_cgi(html_name) == current[0]:
+        if get_cgi(html_name) == current[0] or value_selected == current[0]:
             result.append(" selected")
         result.append(">" + current[1] + "</option>")
     result.append("</select>")
@@ -4286,7 +5033,7 @@ def get_sort_method():
         if re.match("\S", get_cgi("query")):
             return "relevance"
         else:
-            return "timestamp"
+            return "viewing_timestamp"
     else:
         return format
 
@@ -4356,27 +5103,35 @@ def get_visitor_ip():
 
 def get_wrapped_url(section, relative_filename):
     return configuration.get_action_url() + "?page_mode=search_result" + \
+      "&access=" + get_cgi("access") + \
       "&section_to_search=" + section.get_html_name() + \
       "&query=" + urllib.quote(get_cgi("query")) + \
       "&match_partial_words=" + get_cgi("match_partial_words", "0") + \
-      "&relative_filename=" + relative_filename + \
-      "&access=" + urllib.quote(get_cgi("access"))
+      "&should_use_thesaurus=" + get_cgi("should_use_thesaurus", \
+        str(configuration.should_use_thesaurus_by_default())) + \
+      "&relative_filename=" + relative_filename
 
 def init():
     """The initializer, to be called before anything else."""
+    global cannot_save_configuration
     global cgi_form
     global configuration
     global current_locality_handler
     global factory
     global generated_cgi_form
     global html_output_string
+    global is_saving_configuration
     global languages
     global multitasking
+    global objects_saved
     global saves_remaining
     global user_configuration
     factory = None
     configuration = None
     generated_cgi_form = None
+    cannot_save_configuration = 0
+    is_saving_configuration = 0
+    objects_saved = {}
     saves_remaining = 0
     factory = factory_generator()
     try:
@@ -4482,15 +5237,13 @@ def read_file(filename, prefix=DOCUMENT_ROOT):
     filehandle.close()
     return result
 
-def repeat_maintenance_tasks(filename = "cache"):
+def repeat_maintenance_tasks(filename = "monolith"):
     global saves_remaining
     while 1:
         try:
+            time.sleep(configuration.get_delay_between_saves())
             cache.remove_old_data()
-            if saves_remaining > 0 and configuration.should_save_cache():
-                save_object(monolith, "cache")
-                saves_remaining -= 1
-            time.sleep(1)
+            #save_object(monolith, filename)
         finally:
             pass
 
@@ -4502,9 +5255,28 @@ def request_save():
 def reread_documents_and_save_cache():
     for section in sequence(sections):
         sections[section].get_documents(1)
-    save_object(monolith, "cache")
+    save_object(monolith, "monolith")
+
+def reread_thesaurus_and_save_monolith():
+    global thesaurus
+    global cannot_save_configuration
+    cannot_save_configuration += 1
+    new_thesaurus = factory.get_thesaurus()
+    thesaurus = new_thesaurus
+    monolith.thesaurus = new_thesaurus
+    time.sleep(1) # Partial remedy against race conditions.
+    configuration.set_enable_thesaurus(1)
+    save_object(monolith, "monolith")
+    cannot_save_configuration -= 1
 
 def save_configuration():
+    global cannot_save_configuration
+    global is_saving_configuration
+    while cannot_save_configuration:
+        time.sleep(1)
+    if is_saving_configuration:
+        return
+    is_saving_configuration = 1
     maximum_attempts = 10
     for index in range(maximum_attempts):
         try:
@@ -4515,6 +5287,7 @@ def save_configuration():
             if THREADING_LEVEL >= 1:
                 multitasking.thread_specific_storage_lock.release()
             is_error = 0
+            is_saving_configuration = 0
             return
         except IOError:
             if is_error:
@@ -4523,10 +5296,14 @@ def save_configuration():
                   str(index) + ".", 2)
     log_message("Giving up on saving configuration file after " + \
       str(maximum_attempts) + " attempts.", 2)
-
+    is_saving_configuration = 0
 
 def save_object(object, filename):
     """Save an object to a file for later recovery."""
+    global objects_saved
+    if objects_saved.has_key(filename) and objects_saved[filename]:
+        return
+    objects_saved[filename] = 1
     if re.match("^/", filename) == None:
         my_filename = DOCUMENT_ROOT + "pickled/" + filename
     else:
@@ -4536,6 +5313,7 @@ def save_object(object, filename):
     cPickle.dump(object, filehandle)
     filehandle.close()
     os.rename(my_temporary_filename, my_filename)
+    objects_saved[filename] = 0
 
 def selectively_save_sections():
     """If appropriate, save searchable sections."""
@@ -4560,14 +5338,16 @@ def server_init():
     global monolith
     global sections
     global subsections
+    global thesaurus
     global word_numberer
     try:
         log_message("Loading cache...", 2, 0)
-        monolith = load_object("cache")
+        monolith = load_object("monolith")
         log_message("Cache loaded.", 2, 0)
         sections = monolith.sections
         subsections = monolith.subsections
         cache = monolith.cache
+        thesaurus = monolith.thesaurus
         word_numberer = monolith.word_numberer
     except IOError:
         log_message("Cache not available for loading.", 2, 0)
@@ -4587,6 +5367,12 @@ def server_init():
                   "...", 2, 0)
                 cache.get_word_space(language)
                 log_message("Done.", 2, 0)
+        if configuration.should_enable_thesaurus():
+            log_message("Creating thesaurus...", 2, 0)
+            thesaurus = factory.get_thesaurus()
+            log_message("Done creating thesaurus.", 2, 0)
+        else:
+            thesaurus = None
         monolith = factory.get_monolith_class()
     if configuration.should_save_monolith():
         if THREADING_LEVEL >= 1:
@@ -4594,7 +5380,7 @@ def server_init():
               (), {})
             thread.start()
         else:
-            save_object(monolith, "cache")
+            save_object(monolith, "monolith")
     log_message("Initialized.", 2, 0)
 
 def should_save_section(current_section):
@@ -4649,6 +5435,29 @@ def sort_helper(data, aux, in_place):
     result = [data[i] for junk, i in aux]
     if in_place: data[:] = result
     return result
+
+def tokenize(text, should_drop_case = 0):
+        working_text = text
+        working_text = str(text)
+        working_text = re.sub("\n", " ", working_text)
+        working_text = re.sub("<.*?>", " ", working_text)
+        working_text = re.sub("<!--.*?-->", " ", working_text, re.DOTALL)
+        working_text = re.sub("<.*?>", " ", working_text, re.DOTALL)
+        compiled = re.compile("\W+", re.DOTALL)
+        working_list = compiled.split(working_text)
+        for current_token in sequence(working_list):
+            if " " in current_token:
+                debug_log(current_token)
+        result = []
+        if should_drop_case:
+            for current_token in sequence(working_list):
+                if current_token != "":
+                    result.append(string.lower(current_token))
+        else:
+            for current_token in sequence(working_list):
+                if current_token != "":
+                    result.append(current_token)
+        return result
 
 if __name__ == "__main__":
     init()

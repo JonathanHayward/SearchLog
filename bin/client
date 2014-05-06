@@ -4,20 +4,20 @@
 Classics Ethereal Library Nicene and Post-Nicene Fathers' collection and be
 flexible enough to be modifiable to other use.""" 
 
-import cgi, cPickle, os, socket, sys
+import cgi, cPickle, os, socket, sys, time
 
 def get_page_from_oracle():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.connect(("127.0.0.1", 1054))
-        sockIn = sock.makefile("rb")
-        sockOut = sock.makefile("wb")
-        cPickle.dump(cgi.FieldStorage(), sockOut)
-        sockOut.flush()
-        result = cPickle.load(sockIn)
+        sock_in = sock.makefile("rb")
+        sock_out = sock.makefile("wb")
+        cPickle.dump(cgi.FieldStorage(), sock_out)
+        sock_out.flush()
+        result = cPickle.load(sock_in)
         sock.close()
-        sockIn.close()
-        sockOut.close()
+        sock_in.close()
+        sock_out.close()
         return result
     except socket.error, e:
         return """Content-type: text/html
