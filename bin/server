@@ -215,8 +215,6 @@ else:
 
 DOCUMENT_ROOT = \
   "DOCUMENT_ROOT_PATH"
-#if re.match("/$", DOCUMENT_ROOT) == None:
-    #DOCUMENT_ROOT = DOCUMENT_ROOT + "/"
 
 class ancestor:
     """The ancestor to all other classes defined here. Treat as abstract."""
@@ -618,7 +616,7 @@ class configuration_class(ancestor):
     replaced with a cPickle structure."""
     def __init__(self):
         ancestor.__init__(self)
-        self.body_tag = "<body bgcolor=\"#ffffff\" link=\"\#7080e0\" vlink=\"9850a0\" alink=\"#c09090\" text=\"#303030\">"
+        self.body_tag = "<body bgcolor=\"#ffffff\" link=\"#1020e0\" vlink=\"9850a0\" alink=\"#c09090\" text=\"#303030\">"
         self.frames = {}
     def convert_to_url(self, filename):
         return "DOCUMENT_URL" + filename
@@ -662,7 +660,8 @@ class configuration_class(ancestor):
     def get_cell_padding(self):
         return 3
     def get_control_link_style(self):
-        return "text-decoration: none; font-weight: bold"
+        #return "text-decoration: none; font-weight: bold"
+        return "font-weight: bold"
     def get_control_popup_height(self):
         return 600
     def get_control_popup_width(self):
@@ -679,7 +678,7 @@ class configuration_class(ancestor):
         if hasattr(self, "default_result_title"):
             return self.default_result_title
         else:
-            return ""
+            return "Home"
     def get_default_style(self, color = "#808080", should_color = 1):
         if should_color:
             return "color: " + color
@@ -731,12 +730,6 @@ class configuration_class(ancestor):
           factory.get_frame_edit_entry().get_url() + \
           "&access=" + urllib.quote(get_cgi("access")) + \
           "&entry_identifier=" + identifier + "\">Edit " + \
-          "Entry</a></p>\n" + \
-          "<p align=\"center\"><a style=\"" + \
-          self.get_control_link_style() + "\" href=\"" + \
-          factory.get_frame_edit_entry().get_url() + \
-          "&access=" + urllib.quote(get_cgi("access")) + \
-          "&entry_identifier=new_entry\">Add " + \
           "Entry</a></p>\n")
         return "".join(result)
     def get_entry_text_fields(self):
@@ -761,9 +754,11 @@ class configuration_class(ancestor):
         else:
             return 4
     def get_frame_title(self, frame_name):
-        if frame_name == "control":
+        if frame_name == "administrative_control":
             unprocessed_result = self.get_title() + ": Control Panel"
-        elif frame_name == "edit_entry":
+        elif frame_name == "control":
+            unprocessed_result = self.get_title() + ": Control Panel"
+        elif frame_name == "edit_entry" or frame_name == "wiki_edit":
             if get_cgi("entry_identifier", "new_entry") == "new_entry":
                 unprocessed_result = self.get_title() + ": Add New Entry"
             else:
@@ -789,7 +784,7 @@ class configuration_class(ancestor):
         if configuration.get_program_name() == "searchlog":
             return ("administrative_control", "edit_entry", "master", \
               "process_edit_entry", "search", "search_result", "user_control", \
-              "wiki_link");
+              "wiki_edit", "wiki_link");
         else: # data mine by default
             return ("administrative_control", "master", "search", \
               "search_result", "user_control");
@@ -855,7 +850,8 @@ class configuration_class(ancestor):
         #return "font-size: smaller"
         return ""
     def get_result_link_style(self):
-        return "text-decoration: none; font-weight: bold; font-size: larger"
+        #return "text-decoration: none; font-weight: bold; font-size: larger"
+        return "font-weight: bold; font-size: larger"
     def get_sacrifice_memory_for_speed_level(self):
         return 0.0
     def get_search_server_ip(self):
@@ -868,7 +864,7 @@ class configuration_class(ancestor):
         if hasattr(self, "userland_text_width"):
             return self.userland_text_width
         else:
-            return 76
+            return 60
     def get_text_default_color(self):
         return (128, 128, 128)
     def get_text_match_color(self):
@@ -895,6 +891,8 @@ class configuration_class(ancestor):
             return self.welcome_snippet
         else:
             return ""
+    def get_wiki_edit_marker(self):
+        return "&diams;"
     def get_wiki_link_style(self):
         return self.get_control_link_style()
         #return ""
@@ -1116,7 +1114,7 @@ class document(ancestor):
         for current_match in sequence(matches):
             index += 1
             if index == limit:
-                return ("".join(workbench), indicator)
+                return ("".join(workbench), len(matches), indicator)
             score = query_to_highlight.get_score_for_word( \
               self.get_language(), current_match[1])
             workbench.append("<tr><td align=\"right\" valign=\"top\">")
@@ -1372,6 +1370,8 @@ class factory_generator(ancestor):
                       self.get_frame_search_result_from_html()
                 if frame_name == "user_control":
                     self.frames[frame_name] = self.get_frame_control_user()
+                if frame_name == "wiki_edit":
+                    self.frames[frame_name] = self.get_frame_wiki_edit()
                 if frame_name == "wiki_link":
                     self.frames[frame_name] = self.get_frame_wiki_link()
             return self.frames[frame_name]
@@ -1393,6 +1393,8 @@ class factory_generator(ancestor):
         return frame_search_result()
     def get_frame_search_result_from_html(self):
         return frame_search_result_from_html()
+    def get_frame_wiki_edit(self):
+        return frame_wiki_edit()
     def get_frame_wiki_link(self):
         return frame_wiki_link()
     def get_histogram(self):
@@ -2174,7 +2176,7 @@ class frame_control(frame):
             pass
         try:
             configuration.set_hide_configure_link(int(get_cgi( \
-              "control_miscellaneous_access_level", \
+              "control_miscellaneous_should_hide_configure_link", \
               str(configuration.should_hide_configure_link()))))
         except ValueError:
             pass
@@ -2502,11 +2504,17 @@ class frame_process_edit_entry(frame):
         else:
             if sections[get_cgi("section_to_search", \
               get_default_section())].get_name() == "Main":
-                build_output(add_wiki_links(string.replace("".join(result), \
+                text = string.replace("".join(result), \
                   configuration.get_entry_footer_marker(), \
-                  configuration.get_entry_footer_link(new_identifier))))
+                  configuration.get_entry_footer_link(new_identifier))
+                if configuration.get_program_name() == "searchlog":
+                    text = add_wiki_links(text)
+                build_output(text)
             else:
-                build_output(add_wiki_links("".join(result)))
+                text = "".join(result)
+                if configuration.get_program_name() == "searchlog":
+                    text = add_wiki_links(text)
+                build_output(text)
     def get_access_level(self):
         return READ_AND_WRITE_ACCESS
     def get_entry_identifier(self, moment):
@@ -2600,18 +2608,6 @@ class frame_search(frame):
           "<input type=\"image\" name=\"submit\" value=\"submit\" " + \
           "alt=\"submit\" border=\"0\" align=\"center\" src=\"" + \
           configuration.convert_to_url("submit.gif") + "\">&nbsp; ")
-        build_output("<a href=\"" + \
-          factory.get_frame("search").get_url() + \
-          "&access=" + get_cgi("access") + \
-          "\"><img src=\"" + configuration.convert_to_url("start_over.gif") + \
-          "\" alt=\"Start Over\" align=\"center\" border=\"0\"></a>&nbsp; ")
-        if configuration.get_program_name() == "searchlog":
-            build_output("<a href=\"" + \
-              factory.get_frame("search_result").get_url() + \
-              "&access=" + get_cgi("access") + \
-              "\" target=\"search_result\"><img src=\"" + \
-              configuration.convert_to_url("home.gif") + \
-              "\" alt=\"Home\" align=\"center\" border=\"0\"></a>&nbsp; ")
         build_output("<input type=\"hidden\" name=\"page_mode\" " + \
           "value=\"search\">")
         build_output("<input type=\"hidden\" name=\"old_place_in_search\" " + \
@@ -2724,6 +2720,26 @@ class frame_search(frame):
                 build_output("</noscript>")
         build_output("</td></tr>")
         build_output("</table>")
+        build_output("<p align=\"center\"><font size=\"+1\">")
+        if configuration.get_program_name() == "searchlog":
+            build_output("<a style=\"" + \
+              configuration.get_control_link_style() + "\" href=\"" + \
+              factory.get_frame_edit_entry().get_url() + "&access=" + \
+              urllib.quote(get_cgi("access")) + \
+              "&entry_identifier=new_entry\" " + \
+              "target=\"search_result\">Add Entry</a>&nbsp;&nbsp; ")
+        if configuration.get_program_name() == "searchlog":
+            build_output("<a style=\"" + \
+              configuration.get_control_link_style() + "\" href=\"" + \
+              factory.get_frame("search_result").get_url() + \
+              "&access=" + get_cgi("access") + \
+              "\" target=\"search_result\">Home</a>&nbsp;&nbsp; ")
+        build_output("<a style=\"" + \
+          configuration.get_control_link_style() + "\" href=\"" + \
+          factory.get_frame("search").get_url() + \
+          "&access=" + get_cgi("access") + \
+          "\">Start Over</a>&nbsp; ")
+        build_output("</font></p>")
         if get_cgi("query") == "":
             build_output(configuration.get_welcome_snippet())
         if configuration.get_program_name() == "searchlog" or \
@@ -2782,11 +2798,14 @@ class frame_search_result(frame):
         if get_default_section() != None:
             if sections[get_cgi("section_to_search", \
               get_default_section())].get_name() == "Main":
-                result = add_wiki_links(string.replace(result, \
+                result = string.replace(result, \
                   configuration.get_entry_footer_marker(), \
-                  configuration.get_entry_footer_link(filename)))
+                  configuration.get_entry_footer_link(filename))
+                if configuration.get_program_name() == "searchlog":
+                    result = add_wiki_links(result)
             else:
-                result = add_wiki_links(result)
+                if configuration.get_program_name() == "searchlog":
+                    result = add_wiki_links(result)
         return result
     def display(self):
         nothing_displayed = 0
@@ -2814,9 +2833,11 @@ class frame_search_result(frame):
         else:
             nothing_displayed = 1
         if nothing_displayed:
-            if configuration.get_default_result_title() != "":
-                factory.get_frame_wiki_link().display( \
-                  configuration.get_default_result_title())
+            if configuration.get_default_result_title() != "" and \
+              factory.get_frame_wiki_link().display( \
+              configuration.get_default_result_title()):
+                pass
+                ###
             else:
                 header = configuration.get_page_header()
                 header = string.replace(header, "@TITLE@", \
@@ -2847,12 +2868,6 @@ class frame_search_result(frame):
                     build_output("<br>")
                 build_output("</form>")
                 build_output(configuration.get_welcome_page())
-                if configuration.get_program_name() == "searchlog":
-                    build_output("<p align=\"center\"><a style=\"" + \
-                      configuration.get_control_link_style() + "\" href=\"" + \
-                      factory.get_frame_edit_entry().get_url() + "&access=" + \
-                      urllib.quote(get_cgi("access")) + \
-                      "&entry_identifier=new_entry\">Add Entry</a></p>\n")
                 build_output("<script language=\"JavaScript\">")
                 build_output("<!--")
                 build_output("function open_control_window()")
@@ -2889,8 +2904,8 @@ class frame_search_result_from_html(frame_search_result):
     def __init__(self):
         frame_search_result.__init__(self)
 
-class frame_wiki_link(frame):
-    """The class responsible for handling wiki-style links."""
+class frame_wiki_edit(frame):
+    """The class responsible for handling wiki-style *editing* links."""
     def __init__(self):
         frame.__init__(self)
     def display(self, provided_title = None):
@@ -2942,6 +2957,115 @@ class frame_wiki_link(frame):
                 self.forward(section_to_search, matches[0])
             else:
                 self.no_matches()
+    def forward(self, section, identifier):
+        global cgi_form
+        url = get_wrapped_url(section, identifier) + \
+          "&page_mode=edit_entry&entry_identifier=" + identifier
+        generated_cgi_form = cgi.parse_qs(url[url.find("?") + 1:])
+        if configuration.get_program_mode() == "oracle":
+            multitasking.get_thread_specific_storage()["generated_cgi_form"] \
+              = generated_cgi_form
+        else:
+            cgi_form = generated_cgi_form
+        factory.get_frame("edit_entry").display()
+    def get_access_level(self):
+        return READ_AND_WRITE_ACCESS
+    def get_url(self):
+        return factory.get_frame().get_url() + \
+          "?page_mode=wiki_edit"
+    def no_matches(self):
+        #build_output("Content-type: text/html\n")
+        header = configuration.get_page_header()
+        header = string.replace(header, "@BODY_TAG@", \
+          configuration.get_body_tag())
+        header = string.replace(header, "@TITLE@", configuration.get_title() \
+          + ": No Matches for Title \"" + get_cgi("title") + "\"")
+        build_output(header)
+        build_output("<p>None of the pages match the title \"" + \
+          get_cgi("title") + "\".</p>")
+        footer = configuration.get_page_footer()
+        build_output(footer)
+    def provide_choice(self, section, match_filenames):
+        matches = []
+        for filename in match_filenames:
+            matches.append(section.get_document(filename))
+        sort_by_attribute(matches, "title", 1)
+        #build_output("Content-type: text/html\n")
+        header = configuration.get_page_header()
+        header = string.replace(header, "@BODY_TAG@", \
+          configuration.get_body_tag())
+        header = string.replace(header, "@TITLE@", configuration.get_title() \
+          + ": Matches for \"" + get_cgi("title") + "\"")
+        build_output(header)
+        build_output("<p>")
+        for match in matches:
+            build_output("<a style=\"" + \
+              configuration.get_control_link_style() + "\" href=\"" + \
+                get_wrapped_url(section, match.get_relative_filename()) + "\">" + \
+                match.get_title() + "</a><br>")
+        build_output("</p>")
+        footer = configuration.get_page_footer()
+        build_output(footer)
+
+class frame_wiki_link(frame):
+    """The class responsible for handling wiki-style links."""
+    def __init__(self):
+        frame.__init__(self)
+    def display(self, provided_title = None):
+        section_to_search = sections[get_cgi("section_to_search", \
+          get_default_section())]
+        if provided_title == None:
+            title = get_cgi("title")
+        else:
+            title = provided_title
+        title = re.sub("<.*?>", "", title)
+        documents = []
+        for document in section_to_search.get_documents():
+            if document.get_title() == title \
+              and section_to_search.truename(document.get_relative_filename()) \
+              == document.get_relative_filename():
+                documents.append(document)
+        if len(documents) >= 1:
+            to_remove = []
+            index = 0
+            for outer in documents:
+                for inner in documents[index + 1:]:
+                    if inner.get_field("PermanentID") == \
+                      outer.get_field("PermanentID"):
+                        if int(inner.get_field("Version")) > \
+                          int(outer.get_field("Version")):
+                            to_remove.append(outer)
+                        else:
+                            to_remove.append(inner)
+                index += 1
+            for entry in to_remove:
+                if entry in documents:
+                    documents.remove(entry)
+        matches = []
+        for document in documents:
+            matches.append(document.get_relative_filename())
+        if len(matches) > 1:
+            self.provide_choice(section_to_search, matches)
+            return 1
+        elif len(matches) == 1:
+            self.forward(section_to_search, matches[0])
+            return 1
+        else:
+            for document in section_to_search.get_documents():
+                if re.match("\A.*" + title + ".*\Z", document.get_title(), \
+                  re.I) and section_to_search.truename(document.get_relative_filename())\
+                  == document.get_relative_filename():
+                    matches.append(document.get_relative_filename())
+            if len(matches) > 1:
+                self.provide_choice(section_to_search, matches)
+                return 1
+            elif len(matches) == 1:
+                self.forward(section_to_search, matches[0])
+                return 1
+            else:
+                if provided_title == None:
+                    self.no_matches()
+                return 0
     def forward(self, section, identifier):
         global cgi_form
         url = get_wrapped_url(section, identifier)
@@ -4291,7 +4415,15 @@ def add_wiki_links(text, external_section = None, target = "_self"):
               "&access=" + urllib.quote(get_cgi("access")) + \
               "&title=" + urllib.quote(address) + "\" target=\"" + target + \
               "\" style=\"" + configuration.get_wiki_link_style() + \
-              "\">" + segment + "</a>"
+              "\">" + segment + "</a>" + \
+              "<a href=\"" + configuration.get_action_url() + \
+              "?page_mode=wiki_edit" + \
+              "&section_to_search=" + section.get_html_name() + \
+              "&query=" + urllib.quote(get_cgi("query")) + \
+              "&access=" + urllib.quote(get_cgi("access")) + \
+              "&title=" + urllib.quote(address) + "\" target=\"" + target + \
+              "\" style=\"" + configuration.get_wiki_link_style() + \
+              "\">" + configuration.get_wiki_edit_marker() + "</a>"
             result.append(additional_piece)
         elif not segment == "[[" and not segment == "][" and not \
           segment == "]]" and not bypass_segment:
@@ -4528,9 +4660,8 @@ def build_output_for_search_result(search_tuple, query):
             build_output("<tr><td colspan=\"2\" align=\"center\">")
         line_break_written = 1
     build_output(excerpts)
-    #build_output("</td></tr><tr><td colspan=\"2\" align=\"center\">")
-    build_output("</td></tr><tr><td colspan=\"2\">")
     if configuration.get_program_name() == "searchlog":
+        build_output("</td></tr><tr><td colspan=\"2\">")
         build_output("<a href=\"" + \
           get_wrapped_url(section, \
           document.get_relative_filename()) + \
@@ -4544,6 +4675,7 @@ def build_output_for_search_result(search_tuple, query):
           "&access=" + urllib.quote(get_cgi("access")) + \
           "\" target=\"search_result\">Edit Entry</a>&nbsp;&nbsp;\n")
     else:
+        build_output("</td></tr><tr><td colspan=\"2\" align=\"center\">")
         if not is_in_single_frame_mode():
             build_output("<a href=\"" + \
               get_wrapped_url(search_tuple[0], \
@@ -4567,12 +4699,6 @@ def build_output_for_search_result(search_tuple, query):
         build_output("<a href=\"JavaScript:display_full_documents()\" " + \
           "style=\"" + configuration.get_control_link_style() + "\">" + \
           "Return to Search</a>&nbsp;&nbsp;")
-    if configuration.get_program_name() == "searchlog":
-        build_output("<a style=\"" + configuration.get_control_link_style() + \
-          "\" href=\"" + factory.get_frame_edit_entry().get_url() + \
-          "&access=" + urllib.quote(get_cgi("access")) + \
-          "&entry_identifier=new_entry\" target=\"search_result\">Add " + \
-          "Entry</a>&nbsp;&nbsp; ")
     if configuration.get_maximum_quotes() != -1 and length > \
       configuration.get_maximum_quotes():
         if not line_break_written:
@@ -4837,11 +4963,14 @@ def generate_output():
         current_frame.display()
     else:
         header = configuration.get_page_header()
-        header = string.replace(header, "@TITLE@", configuration.get_title() \
-          + ": This Part is Restricted: Please Enter Password")
+        header = string.replace(header, "@TITLE@", \
+          configuration.get_frame_title(get_cgi("page_mode", "master")))
         header = string.replace(header, "@BODY_TAG@", \
           configuration.get_body_tag())
         build_output(header)
+        build_output("<h2 align=\"center\"><em>This part is restricted.</em></h2>")
+        build_output("<h2 align=\"center\">If you don't know what the password is, hit ")
+        build_output("\"Back\" so you can go back to what isn't restricted.</h2>")
         build_output("<form action=\"" + configuration.get_action_url() + \
           "\" name=\"" + configuration.get_program_name() + \
           "\" method=\"get\">")
@@ -5112,6 +5241,8 @@ def get_textarea(text_area_type, field_name, starting_text = ""):
         width = "80"
         height = (configuration.get_textarea_height())
     text = str(starting_text)
+    text = string.replace(text, "&", "&amp;")
+    text = string.replace(text, "&amp;#45;", "-")
     text = string.replace(text, "&#45;", "-")
     text = string.replace(text, "<", "&lt;")
     text = string.replace(text, ">", "&gt;")
@@ -5125,8 +5256,12 @@ def get_text_box(text_area_type, field_name, starting_text = ""):
         width = str(configuration.get_userland_text_width())
     else:
         width = "80"
+    text = str(starting_text)
+    text = string.replace(text, "&", "&amp;")
+    text = string.replace(text, "<", "&lt;")
+    text = string.replace(text, ">", "&gt;")
     return "<input type=\"text\" name=\"" + field_name + \
-      "\" size=\"" + width + "\" value=\"" + str(starting_text) + "\">"
+      "\" size=\"" + width + "\" value=\"" + text + "\">"
                                                                                 
 def get_userland_textarea(field_name, starting_text):
     return get_textarea("userland", field_name, starting_text)

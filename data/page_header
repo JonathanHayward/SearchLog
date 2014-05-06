@@ -1,11 +1,11 @@
 <html>
     <head>
         <title>@TITLE@</title>
+        <!--
         <style>
-            <!--
             a { text-decoration: none }
-            -->
         </style>
+        -->
     </head>
     @BODY_TAG@
         <table border="0" width="100%">
