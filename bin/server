@@ -1,6 +1,12 @@
 #!FULL_PYTHON_PATH
 #
 # $Log: insightd,v $
+# Revision 1.68  2004/12/20 13:58:58  jonathan
+# Minor code cleanup.
+#
+# Revision 1.67  2004/12/20 13:57:03  jonathan
+# Commit after fixing duplicate entry bug.
+#
 # Revision 1.66  2004/12/11 20:27:37  jonathan
 # Commit after code cleanup that removed debugging and commented out code.
 #
@@ -640,10 +646,13 @@ class configuration_class(ancestor):
     def get_body_tag(self):
         return self.body_tag
     def get_cache_duration(self):
-        if hasattr(self, "cache_duration"):
-            return self.cache_duration
+        if configuration.get_program_name() == "datamine":
+            if hasattr(self, "cache_duration"):
+                return self.cache_duration
+            else:
+                return 3600
         else:
-            return 3600
+            return 0
     def get_cell_padding(self):
         return 3
     def get_control_link_style(self):
@@ -659,7 +668,7 @@ class configuration_class(ancestor):
         if hasattr(self, "default_format"):
             return self.default_format
         else:
-            return "mixed"
+            return "viewing_timestamp"
     def get_default_style(self, color = "#808080", should_color = 1):
         if should_color:
             return "color: " + color
@@ -1672,22 +1681,23 @@ class folder_tab(ancestor):
         result.append("name=\"control_miscellaneous_excerpt_radius\" ")
         result.append("size=\"5\" value=\"" + \
           str(configuration.get_excerpt_radius()) + "\"></p>")
-        result.append("<p>How long should data be kept in the cache for? ")
-        result.append("<input type=\"text\" ")
-        result.append("name=\"control_miscellaneous_cache_duration_hours\" ")
-        result.append("size=\"5\" value=\"")
-        result.append(str(configuration.get_cache_duration() / 3600))
-        result.append("\"> hours, ")
-        result.append("<input type=\"text\" ")
-        result.append("name=\"control_miscellaneous_cache_duration_minutes\" ")
-        result.append("size=\"5\" value=\"")
-        result.append(str((configuration.get_cache_duration() % 3600) / 60))
-        result.append("\"> minutes, ")
-        result.append("<input type=\"text\" ")
-        result.append("name=\"control_miscellaneous_cache_duration_seconds\" ")
-        result.append("size=\"5\" value=\"")
-        result.append(str(configuration.get_cache_duration() % 60))
-        result.append("\"> seconds.</p>")
+        if configuration.get_program_name() == "datamine":
+            result.append("<p>How long should data be kept in the cache for? ")
+            result.append("<input type=\"text\" ")
+            result.append("name=\"control_miscellaneous_cache_duration_hours\" ")
+            result.append("size=\"5\" value=\"")
+            result.append(str(configuration.get_cache_duration() / 3600))
+            result.append("\"> hours, ")
+            result.append("<input type=\"text\" ")
+            result.append("name=\"control_miscellaneous_cache_duration_minutes\" ")
+            result.append("size=\"5\" value=\"")
+            result.append(str((configuration.get_cache_duration() % 3600) / 60))
+            result.append("\"> minutes, ")
+            result.append("<input type=\"text\" ")
+            result.append("name=\"control_miscellaneous_cache_duration_seconds\" ")
+            result.append("size=\"5\" value=\"")
+            result.append(str(configuration.get_cache_duration() % 60))
+            result.append("\"> seconds.</p>")
         result.append("<p>Should results have a More Like This link? ")
         result.append("<select name=\"control_miscellaneous_should_display_more_like_this\">")
         if configuration.should_display_more_like_this():
@@ -1737,7 +1747,7 @@ class folder_tab(ancestor):
         result.append("<p>Should the configure link at the bottom of the left")
         result.append(" panel be camouflaged? It will still be there, and ")
         result.append("this is <em>not</em> a security measure, but it ")
-        result.append("will be less likely to trip up your users.")
+        result.append("will be less likely to trip up your users. ")
         result.append("<select name=\"control_miscellaneous_should_hide_configure_link\">")
         if configuration.should_hide_configure_link():
             result.append("<option value=\"1\" selected>Yes</option>")
@@ -2318,7 +2328,8 @@ class frame_edit_entry(frame):
         build_output("<input type=\"hidden\" name=\"page_mode\" value=\"" + \
           "process_edit_entry\">")
         build_output("<input type=\"hidden\" name=\"entry_identifier\" " + \
-          "value=\"" + entry_identifier + "\">")
+          "value=\"" + \
+          sections[get_default_section()].truename(entry_identifier) + "\">")
         for field in configuration.get_entry_text_fields():
             if field in configuration.get_invisible_fields():
                 if field == "PermanentID":
@@ -2500,6 +2511,7 @@ class frame_process_edit_entry(frame):
             output_file.close()
         keeper_section = None
         section = sections[get_default_section()]
+        should_alias = 0
         if old_filename != "new_entry":
             if get_cgi("should_delete" == "yes"):
                 if section.contains(old_filename):
@@ -2508,7 +2520,7 @@ class frame_process_edit_entry(frame):
             else:
                 if section.contains(old_filename):
                     keeper_section = section
-                    section.alias(old_filename, filename)
+                    should_alias = 1
         if keeper_section == None:
             keeper_section = sections[get_default_section()]
         if get_cgi("should_delete") == "yes" or old_filename != "new_entry":
@@ -2519,6 +2531,8 @@ class frame_process_edit_entry(frame):
             cache.invalidate()
         if old_filename != "new_entry":
             keeper_section.deregister(old_filename)
+        if should_alias:
+            section.alias(old_filename, filename)
         keeper_section.set_timestamp("modified", filename)
         for section in sections.values():
             section.register(filename)
@@ -3463,7 +3477,6 @@ class search(ancestor):
         self.sections_of_documents = sections_of_documents
     def search(self):
         """Perform a search. Returns a tuple of (section, file, score)."""
-        ###
         selected_section = self.criteria[2]
         if selected_section in sequence(sections):
             restricted_section = sections[selected_section]
@@ -3511,12 +3524,6 @@ class search(ancestor):
                             scored_results.append((current_section, document, \
                               document, self.query.score(document, \
                               query_string)))
-                              ### Changed to submit a string rather than a
-                              # query object.
-                        #elif get_sort_method() == "relevance":
-                            #scored_results.append((current_section, \
-                              #document, self.query.score(document, \
-                              #self.query)))
                         elif get_sort_method() == "alpabetized":
                             scored_results.append((current_section, \
                               document, document.get_title()))
@@ -3669,9 +3676,9 @@ class section(ancestor):
             pass
     def deregister(self, filename):
         try:
-            if filename in sequence(self.documents_by_filename):
-                self.documents.remove(self.documents_by_filename[filename])
-                del self.documents_by_filename[filename]
+            if name in sequence(self.documents_by_filename):
+                self.documents.remove(self.documents_by_filename[name])
+                del self.documents_by_filename[name]
         except:
             pass
     def get_timestamp(self, field, filename):
@@ -4127,17 +4134,21 @@ class webpage(document):
                             inner_segments[index] + "</span>"
                 split_document += inner_segments
         interim = "".join(split_document)
-        for pair in [("a", "href", "wrap"), \
-          ("img", "src", "canonicalize"), \
-          ("body", "background", "canonicalize"), \
-          ("link", "href", "canonicalize"), \
-          ("applet", "code", "canonicalize"), \
-          ("a", "target", "override: _self")]:
+        if configuration.get_program_name() == "datamine":
+            actions = [("a", "href", "wrap"), \
+              ("img", "src", "canonicalize"), \
+              ("body", "background", "canonicalize"), \
+              ("link", "href", "canonicalize"), \
+              ("applet", "code", "canonicalize"), \
+              ("a", "target", "override: self")]
+        else:
+            actions = []
+        for triplet in actions:
             interim = "".join(split_document)
             pieces = []
-            tag_name = self.insensitize(pair[0])
-            attribute_name = self.insensitize(pair[1])
-            what_to_do = pair[2]
+            tag_name = self.insensitize(triplet[0])
+            attribute_name = self.insensitize(triplet[1])
+            what_to_do = triplet[2]
             pattern = r"(<" + tag_name + r"[^>]+" + attribute_name + \
               r"\s*=\s*" + "[\"']" + r"?[^\s" + "\"'" + r">]*)"
             split_document = re.split(pattern, interim)
