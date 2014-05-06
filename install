@@ -1,0 +1,2 @@
+#!/bin/bash
+python bin/install_or_upgrade install
